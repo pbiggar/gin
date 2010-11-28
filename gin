@@ -1,0 +1,153 @@
+#!/usr/bin/env python
+
+import os
+import subprocess
+import threading
+import sys
+import re
+
+main = None
+all_args = []
+
+def run(args):
+  class ThreadWorker(threading.Thread):
+    def __init__(self, pipe, debug_target):
+      super(ThreadWorker, self).__init__()
+      self.all = ""
+      self.pipe = pipe
+      self.debug_target = debug_target
+      self.setDaemon(True)
+
+    def run(self):
+      while True:
+        line = self.pipe.readline()
+        if line == '': break
+        else:
+          self.all += line
+
+  try:
+    print args
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    stdout_worker = ThreadWorker(proc.stdout, sys.stdout)
+    stderr_worker = ThreadWorker(proc.stderr, sys.stderr)
+    stdout_worker.start()
+    stderr_worker.start()
+
+    # Read directly so that we can save it and output it
+    # TODO: make this work with stderr too, possibly by using pexpect (where available)
+    while proc.poll() is None:
+      pass
+
+  except KeyboardInterrupt, e:
+    pass
+
+  stdout, stderr = stdout_worker.all, stderr_worker.all
+  result = (stdout, stderr, proc.returncode)
+  print result
+  return result
+
+
+def sources():
+  return find_filetypes (['cpp', 'c'])
+
+def find_filetypes(types):
+  sources = []
+  for (dirpath, dirnames, filenames) in os.walk('.'):
+    for file in filenames:
+      for type in types:
+        if file.endswith("." + type):
+          sources.append(os.path.join(dirpath, file))
+          break
+
+  return sources
+
+
+def headers():
+  return find_filetypes (['h'])
+
+
+def build(source, headers):
+  object = source + '.o'
+  args = ['gcc', '-c', source, '-o', object]
+  while True:
+    (out, error, exit) = run(args)
+    if exit == 0:
+      all_args += [args]
+      return object
+
+    print "Couldn't compile %s: (%s, %s)" % (source, out, error)
+    redo = False
+
+    for line in error.split('\n'):
+      print "Line is: " + line
+      pat = re.match(".*error: (.+): No such file or directory", line)
+      if pat != None:
+        header = pat.group(1)
+        matching = [h for h in headers if h.endswith('/' + header)]
+        if len(matching) == 0:
+          print "No headers match, skip it: " + header
+          return None
+        elif len(matching) != 1:
+          print "More than one header matches: " + header + " - " + str(matching)
+          raise TODO()
+
+        m = matching[0]
+        dir = m[0:-len(header)]
+        args += ['-I', dir]
+        redo = True
+        break
+
+      pat = re.match("In file included from .*:$", line)
+      if pat:
+        continue
+
+      pat = re.match(".*: warning: .*", line)
+      if pat:
+        continue
+
+      print "Didnt match, ignoring: " + line
+
+    if redo:
+      print "Trying again"
+    else:
+      print "Giving up"
+      return None
+
+
+
+
+def read_symbols(object):
+  (output, _, exitcode) = run (['nm', object])
+  assert exitcode == 0
+  result = []
+  for line in output.strip().split('\n'):
+    print line
+    if len(line) == 0: # ignore blanks
+      continue
+    if line[0] == ' ': # tuple
+      (type, name) = line.split()
+    else: # triple
+      (_, type, name) = line.split()
+    result.append ((name, type))
+  return result
+
+
+
+
+headers = headers()
+for source in sources():
+  object = build(source, headers)
+  if object == None:
+    print "Could not build %s, will try again if necessary" % source
+    continue
+  symbols = read_symbols(object)
+  if "_main" in symbols:
+    main = (source, object, symbols)
+
+if not main:
+  raise Error("No main function found")
+else:
+  print "Found main"
+
+
