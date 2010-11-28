@@ -1,0 +1,5 @@
+#!/usr/bin/env gin
+
+default:
+  cd test/test1 && gin
+  cd test/test2 && gin
