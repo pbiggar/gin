@@ -1,83 +1,227 @@
 #!/usr/bin/env python
 
-import os
-import subprocess
-import threading
-import sys
 import re
+import util
+import pdb
+import sys
 
-def run(args):
-  class ThreadWorker(threading.Thread):
-    def __init__(self, pipe):
-      super(ThreadWorker, self).__init__()
-      self.all = ""
-      self.pipe = pipe
-      self.setDaemon(True)
-
-    def run(self):
-      while True:
-        line = self.pipe.readline()
-        if line == '': break
-        else:
-          self.all += line
-
-  try:
-    print args
-    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    stdout_worker = ThreadWorker(proc.stdout)
-    stderr_worker = ThreadWorker(proc.stderr)
-    stdout_worker.start()
-    stderr_worker.start()
-
-    proc.wait()
-    stdout_worker.join()
-    stderr_worker.join()
-
-  except KeyboardInterrupt, e:
-    pass
-
-  stdout, stderr = stdout_worker.all, stderr_worker.all
-  result = (stdout, stderr, proc.returncode)
-  return result
+def ginassert(value):
+  if not value:
+    pdb.set_trace()
+    raise AssertionError
 
 
-def find_filetypes(types):
-  sources = []
-  for (dirpath, dirnames, filenames) in os.walk('.'):
-    for file in filenames:
-      for type in types:
-        if file.endswith("." + type):
-          sources.append(os.path.join(dirpath, file))
-          break
-
-  return sources
-
-
-
-class System:
+class System(object):
   def __init__(self):
-    self.headers = self._headers()
-    self.sources = self._sources()
-
-  def _headers(self):
-    return find_filetypes (['h'])
-
-  def _sources(self):
-    return find_filetypes (['cpp', 'c'])
-
-  def try_building(self):
-    for chain in self.chains:
-      if not chain.build():
-        print "Could not build %s, will try again if necessary" % chain.source
-        continue
-
-
-
+    self.tools = [GCC()]
 
   def go(self):
-    self.chains = [Chain(system, source) for source in self.sources]
-    self.try_building()
+   
+    # Build things to see what they can provide
+    deps = DependencyManager()
+    for file in util.find_all_files():
+      for tool in self.tools:
+        try:
+          info = tool.analyse(file)
+          info.tool = tool
+          deps.add (info)
+        except UnsupportedFiletypeException:
+          print "%s unsupported by %s" % (file, tool.name)
+
+    # Resolve the main symbols
+    mains = deps.find ('symbol', '_main')
+    for m in mains:
+      deps.solve (m)
+
+class MultiHashTable(object):
+  """A hashtable where a key references more than one value"""
+
+  def __init__(self):
+    self.store = {}
+
+  def add(self, key, value):
+    if key not in self.store:
+      self.store[key] = []
+
+    self.store[key] += [value]
+
+  def get(self, key=None):
+    return self.store.get(key) or []
+
+
+class Info(object):
+  def __init__(self, requires, provides):
+    self.provides = provides
+    self.requires = requires
+
+  def __str__(self):
+    return "" \
+      + "\nProvides: " + ", ".join([str(p) for p in self.provides]) \
+      + "\nRequires: " + ", ".join([str(r) for r in self.requires]) \
+      + "\nTool: " + self.tool.name
+
+
+class GCC(object):
+
+  def __init__(self):
+    self.name = 'gcc'
+    self.configured = set()
+
+  def configure(self, source):
+    type = source.suffix()
+    if type in self.configured:
+      return
+
+    print "Configuring " + type
+
+    ginassert (type == 'c')
+
+    c_identity_file = """
+#include "stdio.h"
+int main(int argc, char** argv)
+{
+  printf("hello world!");
+}
+"""
+
+    # TODO: put this code in tmp
+    (out, err, exit) = util.run (['gcc', '-pipe', '-xc', '-v', '-'], c_identity_file)
+    ginassert (exit == 0)
+
+    libnames = []
+    libdirs = []
+    for l in err.split('\n'):
+      if re.match('.*/collect2.*', l):
+        libnames += re.findall('-l\S+', l)
+        libdirs += re.findall('-L\S+', l)
+
+
+    libnames = [l[2:] for l in libnames]
+    libdirs = [l[2:] for l in libdirs]
+    print libnames
+    print libdirs
+    sys.exit(-1)
+
+
+
+  def analyse_error(self, error):
+    for line in error.split('\n'):
+      pat = re.match(".*error: (.+): No such file or directory", line)
+      if pat != None:
+        raise MissingHeaderException(pat.group(1))
+
+      pat = re.match("In file included from .*:$", line)
+      if pat:
+        continue
+
+      pat = re.match(".*: warning: .*", line)
+      if pat:
+        continue
+
+      raise UnknownErrorException(line)
+
+
+  def analyse(self, source):
+
+    if (source.suffix() not in ['c', 'cpp']):
+      raise UnsupportedFiletypeException()
+
+    self.configure(source)
+
+    provides = []
+    requires = []
+
+    target = source + '.o'
+
+    try:
+      self.build(source, target)
+      provides += [('object-file', target)]
+
+      symbols = self.read_symbols(target)
+      provides += [('symbol', name) for (type, name) in symbols if type == 'T']
+      requires += [('symbol', name) for (type, name) in symbols if type == 'U']
+
+    except MissingHeaderException, e:
+      requires += e.header
+
+    return Info(requires, provides)
+
+
+
+  def build(self, source, target):
+
+    args = ['gcc', '-c', source, '-o', target]
+
+    (out, error, exit) = util.run(args)
+    if exit == 0:
+      return target
+
+    print "Couldn't compile %s: (%s, %s)" % (self.source, out, error)
+    self.analyse_error (error)
+
+
+  def read_symbols(self, target):
+    (output, _, exitcode) = util.run (['nm', target])
+    assert exitcode == 0
+    result = []
+    for line in output.strip().split('\n'):
+      if len(line) == 0: # ignore blanks
+        continue
+
+      if line[0] == ' ': # tuple
+        (type, name) = line.split()
+      else: # triple
+        (_, type, name) = line.split()
+      result.append ((type, name))
+
+    return result
+
+
+
+
+
+
+class MissingHeaderException(Exception):
+  pass
+
+class UnsupportedFiletypeException(Exception):
+  pass
+
+class DependencyManager(object):
+  def __init__(self):
+
+    # (type, name) is requirea; who supplies it?
+    self.suppliers = MultiHashTable()
+
+    # (type, name) is available; who needs it?
+    self.demanders = MultiHashTable()
+
+
+  def add (self, info):
+    print "Adding dependency: " + str(info)
+    for r in info.requires:
+      self.demanders.add (r, info)
+
+    for p in info.provides:
+      self.suppliers.add (p, info)
+
+
+  def find (self, type, name):
+    return self.suppliers.get((type, name))
+
+  def solve (self, start):
+    dependencies = start.requires
+
+    while len(dependencies):
+      d = dependencies.pop(0)
+      print "Finding dependency: " + str(d)
+      s = self.suppliers.get(d)
+      print "Found: " + ",".join([str(x) for x in s])
+      # TODO: when more than one thing resolves the dependency, we'll need to work it out somehow
+      ginassert (len(s) == 1)
+      s = s[0]
+
+
 
     dependencies = ["_main"]
     required = []
@@ -94,101 +238,30 @@ class System:
 
 
   def link(self, required_chains):
-    args = ['gcc', '-o', 'main'] + [c.object for c in required_chains]
-    codes = run(args)
+    args = ['gcc', '-o', 'main'] + [c.target for c in required_chains]
+    codes = util.run(args)
     print codes
 
+  def try_creating(self, file):
+    # bison
+    if prefix(file) + '.y' in find_filetypes('.y'):
+      util.run(['bison', '--defines', file, '-o', file + '.c', file])
 
 
+  def find_header (self, header):
+    matching = [h for h in self.headers() if h.endswith('/' + header)]
+    if len(matching) == 0:
+      if try_creating(header):
+        return []
 
+    if len(matching) != 0:
+      raise Exception(header)
 
+    m = matching[0]
+    dir = m[0:-len(header)]
+    return ['-I', dir]
 
-
-class Chain:
-  def __init__(self, system, source):
-    self.system = system
-    self.source = source
-    self.object = None
-
-  def build(self):
-    object = self.source + '.o'
-    args = ['gcc', '-c', self.source, '-o', object]
-    while True:
-      (out, error, exit) = run(args)
-      if exit == 0:
-        self.object = object
-        self.read_symbols()
-        return True
-
-      print "Couldn't compile %s: (%s, %s)" % (source, out, error)
-      redo = False
-
-      for line in error.split('\n'):
-        pat = re.match(".*error: (.+): No such file or directory", line)
-        if pat != None:
-          header = pat.group(1)
-          matching = [h for h in headers if h.endswith('/' + header)]
-          if len(matching) == 0:
-            print "No headers match, skip it: " + header
-            return False
-          elif len(matching) != 1:
-            print "More than one header matches: " + header + " - " + str(matching)
-            raise TODO()
-
-          m = matching[0]
-          dir = m[0:-len(header)]
-          args += ['-I', dir]
-          redo = True
-          break
-
-        pat = re.match("In file included from .*:$", line)
-        if pat:
-          continue
-
-        pat = re.match(".*: warning: .*", line)
-        if pat:
-          continue
-
-        print "Didnt match, ignoring: " + line
-
-      if redo:
-        print "Trying again"
-      else:
-        print "Giving up"
-        return False
-
-  def is_main(self):
-    # TODO: structure it as property accesses which are cached
-    self.build()
-
-    if not self.object:
-      return False
-
-    return ('T', "_main") in self.symbols
-
-  def dependencies(self):
-    return [sym for (type, sym) in self.symbols if type == 'U']
-
-  def read_symbols(self):
-    (output, _, exitcode) = run (['nm', self.object])
-    assert exitcode == 0
-    result = []
-    print output
-    for line in output.strip().split('\n'):
-      if len(line) == 0: # ignore blanks
-        continue
-
-      if line[0] == ' ': # tuple
-        (type, name) = line.split()
-      else: # triple
-        (_, type, name) = line.split()
-      result.append ((type, name))
-
-    print "Found symbols " + str(result)
-    self.symbols = result
-
-
-
+ 
 system = System()
 system.go()
 
