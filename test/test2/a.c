@@ -1,4 +1,4 @@
-int x();
+extern int x();
 int y();
 int z();
 

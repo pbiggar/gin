@@ -13,8 +13,12 @@ def find_all_files():
 
 
 class Filename(object):
-  def __init__ (self, dirpath, filename):
-    self._str = os.path.join(dirpath, filename)
+  def __init__ (self, dirpath, filename=None):
+    if filename == None:
+      # it's not a dirpath, but the full string
+      self._str = dirpath
+    else:
+      self._str = os.path.join(dirpath, filename)
 
   def suffix(self):
     try:
@@ -23,6 +27,9 @@ class Filename(object):
       return ''
 
   def __str__(self):
+    return self._str
+
+  def __repr__(self):
     return self._str
 
   def __add__(self, other):
@@ -60,7 +67,6 @@ def run(args, stdin=None):
 
   try:
     args = [str(a) for a in args] # convert to strs
-    print args
 
     stdin_pipe = subprocess.PIPE if stdin else None
     proc = subprocess.Popen(args, stdin=stdin_pipe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

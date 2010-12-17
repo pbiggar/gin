@@ -1,5 +1,6 @@
-#!/usr/bin/env gin
+#!/usr/bin/env bugger
 
 default:
-  cd test/test1 && gin
-  cd test/test2 && gin
+#  $ cd test/test1/ && gin
+#  $ cd test/test2/ && gin
+  $ cd test/test3/ && gin
