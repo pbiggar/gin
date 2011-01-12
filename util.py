@@ -90,5 +90,8 @@ def run(args, stdin=None):
   result = (stdout, stderr, proc.returncode)
   return result
 
-
+def check_run(args, stdin=None):
+  out, err, exit = run(args, stdin)
+  if exit != 0:
+    raise Exception(err)
 

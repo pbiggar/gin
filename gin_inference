@@ -1,0 +1,367 @@
+#!/usr/bin/env python
+
+import re
+import util
+import pdb
+import sys
+import os, os.path
+
+def ginassert(value):
+  if not value:
+    pdb.set_trace()
+    raise AssertionError
+
+
+class System(object):
+
+  def go(self):
+    deps = DependencyManager()
+    materials = set([('file', f) for f in util.find_all_files()])
+    requirements = [('symbol', '_main')]
+
+    # Configure the tools
+    tools = [GCC(), NM()]
+    for tool in tools:
+      (rs, ms) = tool.configure()
+      requirements += rs
+      materials.update(ms)
+
+    deps.solve(tools, requirements, materials)
+
+
+class MultiHashTable(object):
+  """A hashtable where a key references more than one value"""
+
+  def __init__(self):
+    self.store = {}
+
+  def add(self, key, value):
+    if key not in self.store:
+      self.store[key] = []
+
+    self.store[key] += [value]
+
+  def get(self, key=None):
+    return self.store.get(key) or []
+
+
+class Info(object):
+  def __init__(self, source, requires, provides):
+    self.source = source
+    self.provides = provides
+    self.requires = requires
+
+  def __str__(self):
+    return "" \
+      + "\nSource: " + str(self.source) \
+      + "\nProvides: " + ", ".join([str(p) for p in self.provides]) \
+      + "\nRequires: " + ", ".join([str(r) for r in self.requires])
+
+  def __repr__(self):
+    return str(self.source)
+
+class Tool(object):
+
+  def consumes(self, material):
+    (type, name) = material
+
+    if type in getattr(self, '_consumes_types', []):
+      return True
+
+    if type == 'file' \
+        and name.suffix() in getattr(self, '_consumes_file_types', []):
+      return True
+
+    return False
+
+
+class NM(Tool):
+  
+  def __init__(self):
+    self.name = 'nm'
+    self._consumes_types = []
+    self._consumes_file_types = ['o', 'dylib', 'a']
+    self._produces_types = ['symbol']
+    self._produces_file_types = []
+    Tool.__init__(self)
+
+  def configure(self):
+    return ([], [])
+
+
+  def read_symbols(self, target):
+    (output, _, exitcode) = util.run (['nm', target])
+    assert exitcode == 0
+    result = []
+    for line in output.strip().split('\n'):
+      if len(line) == 0: # ignore blanks
+        continue
+      elif line.find('stub helpers') != -1: # dunno what this is, ignore it
+        continue
+
+      if line[0] == ' ':
+        (type, name) = line.split() # tuple
+      else:
+        (_, type, name) = line.split() # triple
+      result.append ((type, name))
+
+    return result
+
+  def process (self, source):
+    type, filename = source
+    ginassert (type == 'file')
+
+    symbols = self.read_symbols(filename)
+    provides = [('symbol', name) for (type, name) in symbols if type == 'T']
+    requires = [('symbol', name) for (type, name) in symbols if type == 'U']
+
+    return Info(source, requires, provides)
+
+
+class GCC(Tool):
+
+  def __init__(self):
+    self.name = 'gcc'
+    self._consumes_types = []
+    self._consumes_file_types = ['c', 'cpp']
+    self._produces_types = []
+    self._produces_file_types = ['o']
+    Tool.__init__(self)
+
+  def configure(self):
+
+    c_identity_file = """
+#include "stdio.h"
+int main(int argc, char** argv)
+{
+  printf("hello world!");
+}
+"""
+
+    # TODO: change the cwd to tmp
+    (out, err, exit) = util.run (['gcc', '-pipe', '-xc', '-v', '-'], c_identity_file)
+    ginassert (exit == 0)
+
+    # TODO: use otool on the produced binary first
+    libnames = []
+    libdirs = []
+    for l in err.split('\n'):
+      if re.match('.*/collect2.*', l):
+        libnames += re.findall('-l\S+', l)
+        libdirs += re.findall('-L\S+', l)
+
+    libnames = [l[2:] for l in set(libnames)]
+    libdirs = [l[2:] for l in libdirs]
+
+    libs = []
+    def find_library(n):
+      for d in libdirs:
+        fqns = [d + os.path.sep + n, \
+                d + os.path.sep + 'lib' + n + '.dylib',
+                d + os.path.sep + 'lib' + n + '.a']
+        for fqn in fqns:
+          if os.path.exists(fqn) and not os.path.isdir(fqn):
+            return fqn
+
+      print "not found: " + n
+      return None
+
+    for n in libnames:
+      libs += [find_library(n)]
+
+    print libs
+        
+ 
+    return ([], [('file', util.Filename(l)) for l in libs])
+
+  def process (self, material):
+    type, source = material 
+
+    target = source + '.o'
+
+    provides = [('file', target)]
+    requires = []
+
+    try:
+      self.build(source, target)
+    except MissingHeaderException, e:
+      requires += e.header
+
+    return Info(source, requires, provides)
+
+
+  def build(self, source, target):
+
+    args = ['gcc', '-c', source, '-o', target]
+
+    (out, error, exit) = util.run(args)
+    if exit == 0:
+      return target
+
+    print "Couldn't compile %s: (%s, %s)" % (source, out, error)
+    self.parse (error)
+
+
+  def parse_error (self, error):
+    for line in error.split('\n'):
+      pat = re.match(".*error: (.+): No such file or directory", line)
+      if pat != None:
+        raise MissingHeaderException(pat.group(1))
+
+      pat = re.match("In file included from .*:$", line)
+      if pat:
+        continue
+
+      pat = re.match(".*: warning: .*", line)
+      if pat:
+        continue
+
+      raise UnknownErrorException(line)
+
+
+
+
+class MissingHeaderException(Exception):
+  pass
+
+class UnsupportedFiletypeException(Exception):
+  pass
+
+class DependencyManager(object):
+
+  def solve (self, tools, requirements, materials):
+    providers = {}
+
+    # Try to build whatever we can with the materials we have
+    for m in materials:
+      consumed = False
+      for tool in tools:
+        if tool.consumes (m):
+          print "Consuming " + str(m) + " with " + str(tool)
+          info = tool.process(m)
+          for p in info.provides:
+            providers[p] = info
+          consumed = True
+      if not consumed:
+        print "%s wasn't consumed" % str(m)
+
+    # Now determine which of these we actually need by following depencies
+    required = set()
+
+    # requirements is a queue
+    while len(requirements) > 0:
+      r = requirements.pop(0)
+      if r in providers:
+        info  = providers[r]
+        required.add(info)
+        print info
+        requirements += info.requires
+      else:
+        print "Missing: " + str(r)
+
+
+  
+
+
+
+    sys.exit(-1)
+
+    """
+          # Do we need what it provides?
+          for p in info.provides:
+            if p in requirements:
+              print 'Provides required resource: ' + str(p)
+              requirements.update(info.requires)
+              resources.update(info.provides)
+              break
+            else:
+              print "Skipping; not needed"""
+
+
+
+    resources = set(materials)
+
+    old_resources, old_materials, old_requirements = None, None, None
+
+    while True:
+
+      if (old_requirements == requirements \
+          and old_resources == resources \
+          and old_materials == materials):
+        print "Nothing has changed"
+        sys.exit(-1)
+      else:
+        old_resources = set(resources)
+        old_materials = set(materials)
+        old_requirements = set(requirements)
+
+      if requirements == set(): 
+        print "All done"
+        return
+
+      if materials == set():
+        print "Requirements unsatisfied, with no recourse: \n" + str(requirements)
+        sys.exit(-1)
+
+      # Try to solve all requirements, using existing materials
+      new_rs = set()
+      requirements = new_rs
+
+
+
+    dependencies = start.requires
+
+    while len(dependencies):
+      d = dependencies.pop(0)
+      print "Finding dependency: " + str(d)
+      s = self.suppliers.get(d)
+      print "Found: " + ",".join([str(x) for x in s])
+      # TODO: when more than one thing resolves the dependency, we'll need to work it out somehow
+      ginassert (len(s) == 1)
+      s = s[0]
+
+
+
+#    dependencies = ["_main"]
+#    required = []
+#
+#    while len(dependencies):
+#      d = dependencies.pop(0)
+#      print "Finding dependency: " + d
+#      for chain in self.chains:
+#        if ('T', d) in chain.symbols:
+#          dependencies += chain.dependencies()
+#          required += [chain]
+#
+#    self.link(required)
+
+
+  def link(self, required_chains):
+    args = ['gcc', '-o', 'main'] + [c.target for c in required_chains]
+    codes = util.run(args)
+    print codes
+
+  def try_creating(self, file):
+    # bison
+    if prefix(file) + '.y' in find_filetypes('.y'):
+      util.run(['bison', '--defines', file, '-o', file + '.c', file])
+
+
+  def find_header (self, header):
+    matching = [h for h in self.headers() if h.endswith('/' + header)]
+    if len(matching) == 0:
+      if try_creating(header):
+        return []
+
+    if len(matching) != 0:
+      raise Exception(header)
+
+    m = matching[0]
+    dir = m[0:-len(header)]
+    return ['-I', dir]
+
+ 
+system = System()
+system.go()
+
+
