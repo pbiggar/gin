@@ -67,6 +67,7 @@ def run(args, stdin=None):
 
   try:
     args = [str(a) for a in args] # convert to strs
+    print args
 
     stdin_pipe = subprocess.PIPE if stdin else None
     proc = subprocess.Popen(args, stdin=stdin_pipe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -13,10 +13,11 @@ for target in ginfile:
   struct = ginfile[target]
   name = target
   files = struct["files"]
+  libs = struct["libraries"]
 
   # Build them with gcc
   objs = []
   for f in files:
     objs += [gcc.build_object(f)]
 
-  gcc.link(name, objs)
+  gcc.link(name, objs, libs)
