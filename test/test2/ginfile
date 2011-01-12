@@ -1,0 +1,6 @@
+main:
+  files:
+    - a.c
+    - x.c
+    - y.c
+    - z.c
