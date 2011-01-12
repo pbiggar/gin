@@ -17,13 +17,13 @@ class System(object):
   def go(self):
     deps = DependencyManager()
     materials = set([('file', f) for f in util.find_all_files()])
-    requirements = set([(('symbol', '_main'))])
+    requirements = [('symbol', '_main')]
 
     # Configure the tools
     tools = [GCC(), NM()]
     for tool in tools:
       (rs, ms) = tool.configure()
-      requirements.update(rs)
+      requirements += rs
       materials.update(ms)
 
     deps.solve(tools, requirements, materials)
@@ -46,14 +46,19 @@ class MultiHashTable(object):
 
 
 class Info(object):
-  def __init__(self, requires, provides):
+  def __init__(self, source, requires, provides):
+    self.source = source
     self.provides = provides
     self.requires = requires
 
   def __str__(self):
     return "" \
+      + "\nSource: " + str(self.source) \
       + "\nProvides: " + ", ".join([str(p) for p in self.provides]) \
-      + "\nRequires: " + ", ".join([str(r) for r in self.requires]) \
+      + "\nRequires: " + ", ".join([str(r) for r in self.requires])
+
+  def __repr__(self):
+    return str(self.source)
 
 class Tool(object):
 
@@ -75,7 +80,7 @@ class NM(Tool):
   def __init__(self):
     self.name = 'nm'
     self._consumes_types = []
-    self._consumes_file_types = ['o']
+    self._consumes_file_types = ['o', 'dylib', 'a']
     self._produces_types = ['symbol']
     self._produces_file_types = []
     Tool.__init__(self)
@@ -91,11 +96,13 @@ class NM(Tool):
     for line in output.strip().split('\n'):
       if len(line) == 0: # ignore blanks
         continue
+      elif line.find('stub helpers') != -1: # dunno what this is, ignore it
+        continue
 
-      if line[0] == ' ': # tuple
-        (type, name) = line.split()
-      else: # triple
-        (_, type, name) = line.split()
+      if line[0] == ' ':
+        (type, name) = line.split() # tuple
+      else:
+        (_, type, name) = line.split() # triple
       result.append ((type, name))
 
     return result
@@ -108,7 +115,7 @@ class NM(Tool):
     provides = [('symbol', name) for (type, name) in symbols if type == 'T']
     requires = [('symbol', name) for (type, name) in symbols if type == 'U']
 
-    return Info(requires, provides)
+    return Info(source, requires, provides)
 
 
 class GCC(Tool):
@@ -143,19 +150,28 @@ int main(int argc, char** argv)
         libnames += re.findall('-l\S+', l)
         libdirs += re.findall('-L\S+', l)
 
-
-    libnames = [l[2:] for l in libnames]
+    libnames = [l[2:] for l in set(libnames)]
     libdirs = [l[2:] for l in libdirs]
 
     libs = []
-    for n in libnames:
+    def find_library(n):
       for d in libdirs:
-        fqn = d + os.path.sep + n
-        if os.path.exists(fqn):
-          libs += [fqn]
-          continue
+        fqns = [d + os.path.sep + n, \
+                d + os.path.sep + 'lib' + n + '.dylib',
+                d + os.path.sep + 'lib' + n + '.a']
+        for fqn in fqns:
+          if os.path.exists(fqn) and not os.path.isdir(fqn):
+            return fqn
 
-    
+      print "not found: " + n
+      return None
+
+    for n in libnames:
+      libs += [find_library(n)]
+
+    print libs
+        
+ 
     return ([], [('file', util.Filename(l)) for l in libs])
 
   def process (self, material):
@@ -171,7 +187,7 @@ int main(int argc, char** argv)
     except MissingHeaderException, e:
       requires += e.header
 
-    return Info(requires, provides)
+    return Info(source, requires, provides)
 
 
   def build(self, source, target):
@@ -214,6 +230,54 @@ class UnsupportedFiletypeException(Exception):
 class DependencyManager(object):
 
   def solve (self, tools, requirements, materials):
+    providers = {}
+
+    # Try to build whatever we can with the materials we have
+    for m in materials:
+      consumed = False
+      for tool in tools:
+        if tool.consumes (m):
+          print "Consuming " + str(m) + " with " + str(tool)
+          info = tool.process(m)
+          for p in info.provides:
+            providers[p] = info
+          consumed = True
+      if not consumed:
+        print "%s wasn't consumed" % str(m)
+
+    # Now determine which of these we actually need by following depencies
+    required = set()
+
+    # requirements is a queue
+    while len(requirements) > 0:
+      r = requirements.pop(0)
+      if r in providers:
+        info  = providers[r]
+        required.add(info)
+        print info
+        requirements += info.requires
+      else:
+        print "Missing: " + str(r)
+
+
+  
+
+
+
+    sys.exit(-1)
+
+    """
+          # Do we need what it provides?
+          for p in info.provides:
+            if p in requirements:
+              print 'Provides required resource: ' + str(p)
+              requirements.update(info.requires)
+              resources.update(info.provides)
+              break
+            else:
+              print "Skipping; not needed"""
+
+
 
     resources = set(materials)
 
@@ -241,39 +305,8 @@ class DependencyManager(object):
 
       # Try to solve all requirements, using existing materials
       new_rs = set()
-      for r in requirements:
-        print "Trying to satisfy: " + str(r)
-        if r in resources:
-          print "  Got it"
-        else:
-          print "  Missing"
-          new_rs.add(r)
-
       requirements = new_rs
 
-
-      # Try to build whatever we can with the materials we have
-      for m in materials:
-        consumed = False
-        for tool in tools:
-          if tool.consumes (m):
-            consumed = True
-            print "Trying to make something with " + str(m) + " and " + str(tool)
-            info = tool.process(m)
-            print info
-
-            # Do we need what it provides?
-            for p in info.provides:
-              if p in requirements:
-                print 'Provides required resource: ' + str(p)
-                requirements.update(info.requires)
-                resources.update(info.provides)
-                break
-              else:
-                print "Skipping; not needed"
-
-        if not consumed:
-          print "Not consumed: %s" % str(m)
 
 
     dependencies = start.requires
