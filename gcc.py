@@ -2,6 +2,7 @@ import util
 import os
 
 def get_compiler(filenames):
+  """Return 'gcc' unless there are C++ files, in which case return 'g++'"""
 
   any_cxx = False
   suffixes = set()
@@ -18,17 +19,26 @@ def get_compiler(filenames):
     return 'gcc'
 
 
-def build_object(filename):
+def build_object(filename, includes, defs):
   output_file = filename + '.o'
   compiler = get_compiler([filename])
 
+  defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
+       + ["-D%s" % (k) for (k,v) in defs.items() if v == None]
 
-  print "compiling: " + filename + " into " + output_file + " with " + compiler
-  util.check_run([compiler, '-c', filename, '-o', output_file])
+  includes = ["-I" + i for i in includes]
+
+  util.check_run([compiler, '-c', filename, '-o', output_file] + includes + defs)
+
   return output_file
+
 
 def link(output_file, objects, libs):
   compiler = get_compiler(objects)
-  print "linking " + str(objects) + " with " + str(libs) + " into " + output_file + " with " + compiler
-  util.check_run([compiler, '-o', output_file] + objects + ["-l" + l for l in libs])
+
+   # rpath -L/usr/lib -L/usr/local/lib -R/usr/local/lib -ldl
+
+  libs = ["-l" + l for l in libs]
+
+  util.check_run([compiler, '-o', output_file] + objects + libs)
 

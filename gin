@@ -4,20 +4,48 @@
 import yaml
 import gcc
 
-stream = file("ginfile", "r")
+def read_ginfile():
+  stream = file("ginfile", "r")
+  ginfile = yaml.load(stream)
+  stream.close()
+  return ginfile
 
-ginfile = yaml.load(stream)
+def configure(ginfile):
+  config = file("config.h", "w")
 
-# Get a list of files to be built
-for target in ginfile:
-  struct = ginfile[target]
-  name = target
-  files = struct["files"]
-  libs = struct["libraries"]
+  # Autoconf-like meta information
+  meta = ginfile["meta"]
+  config.write('#define PACKAGE "%s"\n' % (meta["name"]))
+  config.write('#define VERSION "%s"\n' % (meta["version"]))
 
-  # Build them with gcc
-  objs = []
-  for f in files:
-    objs += [gcc.build_object(f)]
+  # Standard GNU directories
+  prefix = "/usr/local/"
+  datadir = prefix + "/share"
+  libdir = prefix + "/lib"
+  pkglibdir = prefix + "/" + meta["name"]
+  config.write('#define DATADIR "%s"\n' % (datadir))
+  config.write('#define PKGLIBDIR "%s"\n' % (pkglibdir))
 
-  gcc.link(name, objs, libs)
+  config.close()
+
+def build(ginfine):
+  targets = ginfile["targets"]
+  for (name, struct) in targets.items():
+    files = struct["files"]
+    libs = struct["libraries"]
+    includes = struct["includes"]
+    includes += ['.'] # For config.h
+    defs = {"HAVE_CONFIG_H": None}
+
+    # Build them with gcc
+    objs = []
+    for filename in files:
+      objs += [gcc.build_object(filename, includes, defs)]
+
+    # Link
+    gcc.link(name, objs, libs)
+
+
+ginfile = read_ginfile()
+configure(ginfile)
+build(ginfile)
