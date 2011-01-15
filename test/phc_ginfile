@@ -147,16 +147,33 @@ targets:
       - src/process_mir/Goto_uppering.cpp
       - src/process_mir/MIR_unparser.cpp
       - src/process_mir/Param_is_ref_uppering.cpp
+
+    includes:
+      - 3rdparty/getopt
+      - src
+      - src/generated
+
     libraries: 
-      - xerces-c
       - gc
       - gccpp
       - boost_regex
       - dl
       - ltdl
-    includes:
-      - src/generated
-      - src
-      - 3rdparty/getopt
-      - src/lib
+
+    # Configure options
+    optional:
+      xerces:
+        language: c++
+        libraries:
+          - xerces-c
+        defines:
+          HAVE_XERCES: 1
+        test: |
+          #include <xercesc/util/PlatformUtils.hpp>
+          XERCES_CPP_NAMESPACE_USE
+          int main() {
+            XMLPlatformUtils::Initialize();
+            return 0;
+          }
+
 

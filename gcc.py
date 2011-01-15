@@ -18,6 +18,10 @@ def get_compiler(filenames):
   else:
     return 'gcc'
 
+def configure_test(source, language):
+  out, err, exit = util.run(['gcc', '-c', '-x', language, '-'], source)
+  return exit == 0
+
 
 def build_object(filename, includes, defs):
   output_file = filename + '.o'
