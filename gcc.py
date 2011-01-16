@@ -1,5 +1,10 @@
 import util
 import os
+import fabric
+
+def _run(args, stdin=None):
+  return fabric.run(args, stdin)
+
 
 def get_compiler(filenames):
   """Return 'gcc' unless there are C++ files, in which case return 'g++'"""
@@ -19,12 +24,13 @@ def get_compiler(filenames):
     return 'gcc'
 
 def configure_test(source, language):
-  out, err, exit = util.run(['gcc', '-c', '-x', language, '-'], source)
+  exit = fabric.run(['gcc', '-c', '-x', language, '-'], source)
   return exit == 0
 
 
+
 def build_object(filename, includes, defs):
-  output_file = filename + '.o'
+  obj = filename + '.o'
   compiler = get_compiler([filename])
 
   defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
@@ -32,9 +38,8 @@ def build_object(filename, includes, defs):
 
   includes = ["-I" + i for i in includes]
 
-  util.check_run([compiler, '-c', filename, '-o', output_file] + includes + defs)
+  return _run([compiler, '-c', filename, '-o', obj] + includes + defs)
 
-  return output_file
 
 
 def link(output_file, objects, libs):
@@ -44,5 +49,4 @@ def link(output_file, objects, libs):
 
   libs = ["-l" + l for l in libs]
 
-  util.check_run([compiler, '-o', output_file] + objects + libs)
-
+  _check_run([compiler, '-o', output_file] + objects + libs)

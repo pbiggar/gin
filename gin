@@ -38,7 +38,7 @@ def configure(ginfile):
 
   for optional in optionals:
     for name,value in optional.items():
-      print "Checking for " + name + '....'
+      print "Checking for " + name + '....',
       works = gcc.configure_test(value["test"], value["language"])
       print "yes" if works else "no"
 
