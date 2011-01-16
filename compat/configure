@@ -1,0 +1,3 @@
+#!/bin/sh
+
+gin compatibility-mode=configure
