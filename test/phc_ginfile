@@ -4,6 +4,36 @@ meta:
   mailing-list: phc-general@phpcompiler.org
   website: http://phpcompiler.org
 
+features:
+  - builtin
+  - C
+  - C++
+
+configure:
+  covariant-returns:
+    language: C++
+    test-program: |
+        class A { public: virtual A* x() { return new A(); } };
+        class B { public: virtual B* y() { return new B(); } };
+        class C : public A, B {
+          public: C* x() { return new C(); }
+            C* y() { return new C(); }
+        };
+    error-if-missing: Use a C++ compiler supporting covariant-returns, for example gcc 3.4 or greater.
+
+  boost:
+    libraries:
+      - boost_regex
+    language: C++
+    test-program: |
+      #include <boost/version.hpp>
+      #if BOOST_VERSION >= 103500
+        // Everything is okay
+      #else
+        #  error Boost version is too old
+      #endif
+
+
 targets:
   phc:
     files:
@@ -154,21 +184,20 @@ targets:
       - src/generated
 
     libraries: 
-      - gc
-      - gccpp
-      - boost_regex
       - dl
       - ltdl
 
     # Configure options
-    optional:
+    configure:
       xerces:
-        language: c++
+        type: with
+        help: support XML input
+        language: C++
         libraries:
           - xerces-c
         defines:
           HAVE_XERCES: 1
-        test: |
+        test-program: |
           #include <xercesc/util/PlatformUtils.hpp>
           XERCES_CPP_NAMESPACE_USE
           int main() {
@@ -176,4 +205,46 @@ targets:
             return 0;
           }
 
+      php:
+        language: C
+        type: with
+        help: PHP installation path (defaults to /usr/local/)
+        defines:
+          PHP_INSTALL_PATH: $CONF_PATH
+        libraries:
+          - php5
+        system-includes:
+          - $CONF_PATH/include/php
+          - $CONF_PATH/include/php/main
+          - $CONF_PATH/include/php/TSRM
+          - $CONF_PATH/include/php/Zend
+        test-program: |
+          #include <sapi/embed/php_embed.h>
+          int main() { zend_eval_string("echo 'x';"); }
+        warn-if-missing: |
+          *******************************************************************************
+          * It seems the PHP embed SAPI has not been installed.                         *
+          *                                                                             *
+          * You will be able to compile and run phc, but you will not be able to        *
+          * compile PHP scripts with phc.                                               *
+          *                                                                             *
+          * To install the PHP embed SAPI, follow the PHP installation instructions,    *
+          * but make sure to pass the --enable-embed option to the PHP configure        *
+          * script.                                                                     *
+          *******************************************************************************]
+  
+      gc:
+        type: enable
+        language: C++
+        help: Link to the Boehm garbage collector [default=${DEFAULT}]
+        test-program: |
+          #include <gc/gc.h>
+          #include <gc/gc_cpp.h>
+        libraries:
+          - gc
+          - gccpp
+        else:
+          defines:
+            DISABLE_GC: 1
+       
 

@@ -10,41 +10,39 @@ def read_ginfile():
   stream.close()
   return ginfile
 
-def configure(ginfile):
-
-  config = file("config.h", "w")
-
-  # Autoconf-like meta information
+def configure_meta_information(ginfile, config):
   meta = ginfile["meta"]
   config.write('#define PACKAGE "%s"\n' % (meta["name"]))
   config.write('#define VERSION "%s"\n' % (meta["version"]))
   config.write('\n');
 
-  # Standard GNU directories
+def configure_standard_dirs(ginfile, config):
+  name = ginfile["meta"]["name"]
+
   prefix = "/usr/local"
   datadir = prefix + "/share"
   libdir = prefix + "/lib"
-  pkglibdir = prefix + "/" + meta["name"]
+  pkglibdir = prefix + "/" + name
   config.write('#define DATADIR "%s"\n' % (datadir))
   config.write('#define PKGLIBDIR "%s"\n' % (pkglibdir))
   config.write('\n');
 
-
-  # configure checks
-  optionals = [t["optional"] for t in ginfile["targets"].values()]
+def configure_options(ginfile, config):
+  configures = [ginfile["configure"]]
+  configures += [t["configure"] for t in ginfile["targets"].values()]
 
   libraries = []
   defines = []
 
-  for optional in optionals:
-    for name,value in optional.items():
+  for conf in configures:
+    for name,value in conf.items():
       print "Checking for " + name + '....',
-      works = gcc.configure_test(value["test"], value["language"])
+      works = gcc.configure_test(value["test-program"], value["language"])
       print "yes" if works else "no"
 
       if works:
-        defines += value["defines"]
-        libraries += value["libraries"]
+        defines += value.get("defines", [])
+        libraries += value.get("libraries", [])
 
   for define in defines:
     if type(define) == 'dict':
@@ -53,6 +51,18 @@ def configure(ginfile):
       config.write('#define %s\n' % (define))
   config.write('\n');
 
+  return libraries
+
+
+
+
+def configure(ginfile):
+
+  config = file("config.h", "w")
+
+  configure_meta_information(ginfile, config)
+  configure_standard_dirs(ginfile, config)
+  libraries = configure_options(ginfile, config)
 
   config.close()
 

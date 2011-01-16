@@ -2,8 +2,13 @@ import util
 import os
 import fabric
 
-def _run(args, stdin=None):
+def run(args, stdin=None):
   return fabric.run(args, stdin)
+
+def check_run(args, stdin=None):
+  exit = fabric.run(args, stdin)
+  if exit != 0:
+    raise Exception("Building failed: " + args)
 
 
 def get_compiler(filenames):
@@ -24,7 +29,7 @@ def get_compiler(filenames):
     return 'gcc'
 
 def configure_test(source, language):
-  exit = fabric.run(['gcc', '-c', '-x', language, '-'], source)
+  exit = run(['gcc', '-c', '-x', language.lower(), '-'], source)
   return exit == 0
 
 
@@ -38,7 +43,9 @@ def build_object(filename, includes, defs):
 
   includes = ["-I" + i for i in includes]
 
-  return _run([compiler, '-c', filename, '-o', obj] + includes + defs)
+  check_run([compiler, '-c', filename, '-o', obj] + includes + defs)
+
+  return obj
 
 
 
@@ -49,4 +56,4 @@ def link(output_file, objects, libs):
 
   libs = ["-l" + l for l in libs]
 
-  _check_run([compiler, '-o', output_file] + objects + libs)
+  check_run([compiler, '-o', output_file] + objects + libs)
