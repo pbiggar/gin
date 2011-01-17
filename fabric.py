@@ -3,7 +3,7 @@
 import fabricate
 
 try:
-  builder = fabricate.Builder("smart_runner")
+  builder = fabricate.Builder("smart_runner", ignore='\.ccache')
   runner = builder.runner
   runner.keep_temps = False
   runner.silent = False
