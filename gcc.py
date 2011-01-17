@@ -1,13 +1,15 @@
 import util
 import os
-import fabric
 
 def run(args, stdin=None):
-  return fabric.run(args, stdin)
+  out, err, exit = util.run(args, stdin)
+  return exit
 
 def check_run(args, stdin=None):
-  exit = fabric.run(args, stdin)
+  out, err, exit = util.run(args, stdin)
   if exit != 0:
+    print out
+    print err
     raise Exception("Building failed: " + str(args))
 
 

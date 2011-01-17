@@ -3,6 +3,7 @@
 # Read from the status file
 import yaml
 import gcc
+import sys
 
 def read_ginfile():
   stream = file("ginfile", "r")
@@ -87,5 +88,12 @@ def build(ginfine, config_libs):
 
 
 ginfile = read_ginfile()
-config_libs = configure(ginfile)
-build(ginfile, config_libs)
+
+# Simple command parsing for now
+command = sys.argv[1] if len(sys.argv) > 1 else None
+if command == "configure-compatibility-mode":
+  compatibility_mode_configure(ginfile)
+elif command == "make-compatibility-mode":
+  compatibility_mode_make(ginfile)
+elif command == None:
+  build(ginfile, configure(ginfile))
