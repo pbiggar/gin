@@ -11,60 +11,79 @@ def read_ginfile():
   stream.close()
   return ginfile
 
-def configure_meta_information(ginfile, config):
+def configure_meta_information(ginfile):
   meta = ginfile["meta"]
-  config.write('#define PACKAGE "%s"\n' % (meta["name"]))
-  config.write('#define VERSION "%s"\n' % (meta["version"]))
-  config.write('\n');
+  return [
+    '#define PACKAGE "%s"\n' % (meta["name"]),
+    '#define VERSION "%s"\n' % (meta["version"]),
+  ]
 
-def configure_standard_dirs(ginfile, config):
+def configure_standard_dirs(ginfile):
   name = ginfile["meta"]["name"]
 
   prefix = "/usr/local"
   datadir = prefix + "/share"
   libdir = prefix + "/lib"
   pkglibdir = prefix + "/" + name
-  config.write('#define DATADIR "%s"\n' % (datadir))
-  config.write('#define PKGLIBDIR "%s"\n' % (pkglibdir))
-  config.write('\n');
+  return [
+    '#define DATADIR "%s"\n' % (datadir),
+    '#define PKGLIBDIR "%s"\n' % (pkglibdir),
+  ]
 
-def configure_options(ginfile, config):
-  configures = [ginfile["configure"]]
-  configures += [t["configure"] for t in ginfile["targets"].values()]
 
-  libraries = []
-  defines = []
+# For multi-processing
+def run_check(check):
+  name = check["name"]
+  print "Checking for " + name + '....',
+  works = gcc.configure_test(check["test-program"], check["language"])
+  print "yes" if works else "no"
 
-  for conf in configures:
-    for name,value in conf.items():
-      print "Checking for " + name + '....',
-      works = gcc.configure_test(value["test-program"], value["language"])
-      print "yes" if works else "no"
+  if works:
+    defines = check.get("defines", [])
+    libraries = check.get("libraries", [])
+    return (defines, libraries)
+  return ([], [])
 
-      if works:
-        defines += value.get("defines", [])
-        libraries += value.get("libraries", [])
 
+def configure_checks(ginfile):
+  checks = ginfile["configure"]
+  for t in ginfile["targets"].values():
+    checks.update (t["configure"])
+
+  # Store the name in the object for passing to Pool.map
+  for name,check in checks.items():
+    check["name"] = name
+
+  # Run checks in parallel
+  from multiprocessing import Pool
+  p = Pool(5)
+  results = p.map(run_check, checks.values())
+
+  libraries = [elem for tup in results for elem in tup[1]]
+  libraries.sort()
+
+  defines = [elem for tup in results for elem in tup[0]]
+  lines = []
   for define in defines:
     if type(define) == 'dict':
-      config.write('#define %s "%s"\n' % (define.keys()[0], define.values()[0]))
+      lines.append ('#define %s "%s"\n' % (define.keys()[0], define.values()[0]))
     else:
-      config.write('#define %s\n' % (define))
-  config.write('\n');
+      lines.append ('#define %s\n' % (define))
+  lines.sort()
 
-  return libraries
-
-
+  return (libraries, lines)
 
 
 def configure(ginfile):
 
+  (libraries, check_lines) = configure_checks(ginfile)
+  meta_lines = configure_meta_information(ginfile)
+  dir_lines = configure_standard_dirs(ginfile)
+
   config = file("config.h", "w")
 
-  configure_meta_information(ginfile, config)
-  configure_standard_dirs(ginfile, config)
-  libraries = configure_options(ginfile, config)
-
+  for l in meta_lines + dir_lines + check_lines:
+    config.write(l)
   config.close()
 
   return libraries
