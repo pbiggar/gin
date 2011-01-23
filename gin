@@ -88,6 +88,10 @@ def configure(ginfile):
 
   return libraries
 
+def b((f, l, i, d)):
+  return gcc.build_object(f,i,d)
+
+
 def build(ginfine, config_libs):
   targets = ginfile["targets"]
   for (name, struct) in targets.items():
@@ -98,9 +102,10 @@ def build(ginfine, config_libs):
     defs = {"HAVE_CONFIG_H": None}
 
     # Build them with gcc
-    objs = []
-    for filename in files:
-      objs += [gcc.build_object(filename, includes, defs)]
+    from multiprocessing import Pool
+    p = Pool(5)
+    obj_list = p.map(b, [(f, libs, includes, defs) for f in files])
+    objs = [obj for objs in obj_list for obj in objs]
 
     # Link
     gcc.link(name, objs, libs)
