@@ -104,8 +104,7 @@ def build(ginfine, config_libs):
     # Build them with gcc
     from multiprocessing import Pool
     p = Pool(5)
-    obj_list = p.map(b, [(f, libs, includes, defs) for f in files])
-    objs = [obj for objs in obj_list for obj in objs]
+    objs = p.map(b, [(f, libs, includes, defs) for f in files])
 
     # Link
     gcc.link(name, objs, libs)
