@@ -12,6 +12,12 @@ def check_run(args, stdin=None):
     print err
     raise Exception("Building failed: " + str(args))
 
+def get_output_file(filename):
+  return filename + '.o'
+
+def get_deps_file(filename):
+  return filename + '.deps'
+
 
 def get_compiler(filenames):
   """Return 'gcc' unless there are C++ files, in which case return 'g++'"""
@@ -35,9 +41,17 @@ def configure_test(source, language):
   return exit == 0
 
 
+def read_deps_file(string):
+  lines = string.split()
+
+  lines = [l for l in lines if l != '\\' and l[-1:] != ':']
+
+  return lines
+
 
 def build_object(filename, includes, defs):
-  obj = filename + '.o'
+  obj = get_output_file (filename)
+  deps_file = get_deps_file (filename)
   compiler = get_compiler([filename])
 
   defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
@@ -45,9 +59,12 @@ def build_object(filename, includes, defs):
 
   includes = ["-I" + i for i in includes]
 
-  check_run(['ccache', compiler, '-c', filename, '-o', obj] + includes + defs)
+  check_run(['ccache', compiler, '-c', filename, '-o', obj, '-MT', obj, '-MD', '-MP', '-MF', deps_file] + includes + defs)
 
-  return obj
+  deps = file(deps_file).read()
+  deps = read_deps_file(deps)
+
+  return deps
 
 
 
