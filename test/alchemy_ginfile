@@ -1,0 +1,7 @@
+alchemy:
+  files:
+    - Alchemy.cpp
+    - Board.cpp
+    - Square.cpp
+  libraries:
+    - ncurses
