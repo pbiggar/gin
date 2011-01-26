@@ -5,6 +5,7 @@ import yaml
 import gcc
 import sys
 import state
+import pprint
 
 def read_ginfile():
   stream = file("ginfile", "r")
@@ -91,6 +92,8 @@ def configure(ginfile):
 
 
 def build(state, ginfile, config_libs):
+  # state.add("config.h", [], configure, ())
+
   targets = ginfile["targets"]
   for (name, struct) in targets.items():
     files = struct["files"]
@@ -102,18 +105,15 @@ def build(state, ginfile, config_libs):
     objs = []
     for f in files:
       obj = gcc.get_output_file(f)
-      objs += obj
+      objs += [obj]
       state.add(obj, f, gcc.build_object, (f, includes, defs))
 
     # link steps
-    state.add(name, objs, gcc.link, (objs, libs))
-
-    state.add("config.h", [], configure, ())
+    state.add(name, objs, gcc.link, (name, objs, libs))
 
 #source_file -> parent_file (bison etc)
 
 ginstate = state.load()
-
 try:
   # Don't forget to make this depend on ginfile
   if not ginstate:
@@ -122,7 +122,16 @@ try:
     build(ginstate, ginfile, configure(ginfile))
 
   ginstate.process()
-except:
-  print "Stopping"
 
+  # Debugging
+#  for k,v in ginstate._chain.items():
+#    print k + ": \n"
+#    pprint.pprint(vars(v))
+
+except:
+  print "Saving state"
+  ginstate.save()
+  raise
+
+print "Saving state"
 ginstate.save()

@@ -1,4 +1,7 @@
 import cPickle as pickle
+import multiprocessing
+import time
+import util
 
 class Data(object):
   def __init__(self, target, callback, arguments):
@@ -27,19 +30,33 @@ class State(object):
     data = Data(target, function, arguments)
     self._chain[target] = data
 
-  def get_next_target(self):
-    # Find a target which hasn't ever been built
-    for d in self._chain.values():
-      if d.deps == None:
-        return d
-
-    assert (0)
-
         
   def process(self):
-    while len(self._chain):
-      # TODO: this is where caching, timestamps, etc, go
-      data = self.get_next_target()
-      data.deps = data.callback(*data.arguments)
+    pool = multiprocessing.Pool(3)
+    timestamp = time.time()
 
+    # TODO: md5
+    # For targets where we don't know the deps, we must build
+    results = []
+    for data in self._chain.values():
+      build = False
+      if not data.deps:
+        print "No deps available, building %s (%s)" % (data.target, data)
+        build = True
+      else:
+        for d in data.deps:
+          if util.timestamp(d) >= util.timestamp(data.target):
+            build = True
+            print "Dep outdated, building: " + data.target + d
+            break
+
+      if build:
+        handle = pool.apply_async(data.callback, data.arguments)
+        results += [(data, handle)]
+      else:
+        print "No need to build: " + data.target
+
+    for data, handle in results:
+      data.deps = handle.get()
+      print "Adding deps to %s (%s): %s" % (data.target, str(data), str(data.deps))
 

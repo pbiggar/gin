@@ -91,4 +91,5 @@ def run(args, stdin=None):
   result = (stdout, stderr, proc.returncode)
   return result
 
-
+def timestamp(filename):
+  return os.path.getmtime(filename)
