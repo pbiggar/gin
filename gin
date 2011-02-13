@@ -6,6 +6,7 @@ import gcc
 import sys
 import state
 import pprint
+import trace
 
 def read_ginfile():
   stream = file("ginfile", "r")
@@ -106,16 +107,17 @@ def build(state, ginfile, config_libs):
     for f in files:
       obj = gcc.get_output_file(f)
       objs += [obj]
-      state.add(obj, f, gcc.build_object, (f, includes, defs))
+      state.add(obj, f, gcc.build_object, (f, includes, defs), None)
 
     # link steps
-    state.add(name, objs, gcc.link, (name, objs, libs))
+    state.add(name, objs, gcc.link, (name, objs, libs), objs)
 
 #source_file -> parent_file (bison etc)
 
-ginstate = state.load()
-try:
-  # Don't forget to make this depend on ginfile
+def main():
+  ginstate = state.load()
+#  try:
+    # TODO: Don't forget to make this depend on ginfile
   if not ginstate:
     ginstate = state.State()
     ginfile = read_ginfile()
@@ -123,15 +125,18 @@ try:
 
   ginstate.process()
 
-  # Debugging
-#  for k,v in ginstate._chain.items():
-#    print k + ": \n"
-#    pprint.pprint(vars(v))
+#  except:
+#    print "Error"
+#    raise
 
-except:
-  print "Saving state"
-  ginstate.save()
-  raise
+#  finally:
+#    print "Saving state"
+#    ginstate.save()
 
-print "Saving state"
-ginstate.save()
+
+ignoredirs="/usr/lib/python2.6/"
+tracer = trace.Trace(trace=1, ignoredirs=[ignoredirs])
+
+if __name__ == "__main__":
+  main()
+
