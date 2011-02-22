@@ -5,8 +5,8 @@ import yaml
 import gcc
 import sys
 import state
+from state import FunctionNode, FileNode
 import pprint
-import trace
 
 def read_ginfile():
   stream = file("ginfile", "r")
@@ -56,6 +56,7 @@ def configure_checks(ginfile):
   # Store the name in the object for passing to Pool.map
   for name,check in checks.items():
     check["name"] = name
+    state.add(FunctionNode(TODO, [], run_check, (check,)))
 
   # Run checks in parallel
   from multiprocessing import Pool
@@ -77,23 +78,26 @@ def configure_checks(ginfile):
   return (libraries, lines)
 
 
-def configure(ginfile):
+
+def configure(state, ginfile):
 
   (libraries, check_lines) = configure_checks(ginfile)
   meta_lines = configure_meta_information(ginfile)
   dir_lines = configure_standard_dirs(ginfile)
 
-  config = file("config.h", "w")
+  def write_config_file(check_lines):
+    config = file("config.h", "w")
 
-  for l in meta_lines + dir_lines + check_lines:
-    config.write(l)
-  config.close()
+    for l in meta_lines + dir_lines + check_lines:
+      config.write(l)
+    config.close()
+
+  state.add(FunctionNode([FileNode("config.h")], 
 
   return libraries
 
 
 def build(state, ginfile, config_libs):
-  # state.add("config.h", [], configure, ())
 
   targets = ginfile["targets"]
   for (name, struct) in targets.items():
@@ -105,37 +109,33 @@ def build(state, ginfile, config_libs):
 
     objs = []
     for f in files:
-      obj = gcc.get_output_file(f)
+      obj = FileNode(gcc.get_output_file(f))
       objs += [obj]
-      state.add(obj, f, gcc.build_object, (f, includes, defs), None)
+      state.add(FunctionNode([obj], None, gcc.build_object, (f, includes, defs)))
 
     # link steps
-    state.add(name, objs, gcc.link, (name, objs, libs), objs)
+    state.add(FunctionNode([name], objs, gcc.link, (name, objs, libs), objs))
 
-#source_file -> parent_file (bison etc)
 
 def main():
-  ginstate = state.load()
-#  try:
+  ginstate = state.State.load()
+  try:
     # TODO: Don't forget to make this depend on ginfile
-  if not ginstate:
-    ginstate = state.State()
-    ginfile = read_ginfile()
-    build(ginstate, ginfile, configure(ginfile))
+    if not ginstate:
+      ginstate = state.State()
+      ginfile = read_ginfile()
+      build(ginstate, ginfile, configure(ginstate, ginfile))
 
-  ginstate.process()
+    ginstate.process()
 
-#  except:
-#    print "Error"
-#    raise
+  except:
+    print "Error"
+    raise
 
-#  finally:
-#    print "Saving state"
-#    ginstate.save()
+  finally:
+    print "Saving state"
+    ginstate.save()
 
-
-ignoredirs="/usr/lib/python2.6/"
-tracer = trace.Trace(trace=1, ignoredirs=[ignoredirs])
 
 if __name__ == "__main__":
   main()

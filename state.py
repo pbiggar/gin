@@ -6,12 +6,41 @@ import networkx as nx
 import sys
 import time
 
-class Data(object):
-  def __init__(self, target, callback, arguments, deps):
-    self.target = target
-    self.callback = callback
-    self.arguments = arguments
+class Node(object):
+  def __init__(self, targets, deps):
+    self.target = targets
     self.deps = deps
+
+    for t in targets:
+      assert isinstance(t, Node)
+
+    if deps:
+      for d in deps:
+        assert isinstance(d, Node)
+
+class FileNode(Node):
+  """A node representing files"""
+  def __init__(self, filename):
+    # There are no targets because we don't have a node to represent them
+    super(FileNode, self).__init__([], [])
+    self.filename = filename
+
+class FunctionNode(Node):
+  """A node which calls a function to generate the target from its dependencies. |deps| can be None, in which case |function| updates it after it's called."""
+  def __init__(self, targets, deps, function, args):
+    super(FunctionNode, self).__init__(targets, deps)
+    self.function = function
+    self.args = args
+
+
+class FactoringNode(Node):
+  """A node to factor edges.
+"Factor" is used in this context when discussing use-def graphs. Basically, We might have N targets which are all dependent on the same M nodes. Rather than adding M*N edges, you "factor" them by adding a FactoringNode, which sits between the edges, so you only have M+N+1 nodes."""
+  pass
+
+########################################
+# Multiprocessing interface
+########################################
 
 # Why does multiprocessing require such hacks
 state = None
@@ -32,35 +61,16 @@ def local_callback(rval):
   (deps, target) = rval
   data = state._all[target]
   data.deps = deps
-
+  state._add_data(data)
 
 
 def call_remotely(data):
   return pool.apply_async(remote_proxy, (data.callback, data.arguments, {}, data.target), callback=local_callback)
   
 
-
-def after_callback(args):
-  # Pass exceptions back
-  if isinstance(args, Exception):
-    raise args
-
-  # THe reason this doesn't work is that data is serialized, and you're adding
-  # deps to the wrong object. You're looking for D, but getting D'' (prime prime)
-
-  (state, data, deps) = args
-  data.deps = deps
-  state._add_data(data)
-
-  print "Done: " + data.target + "(%s)" % str(data)
-
-
-def load():
-  try:
-    return pickle.load(file('.ginpickle', 'r'))
-  except:
-    return None
-
+########################################
+# Pickling
+########################################
 # TODO: state get's pickled, so perhaps it's not the best thing to be holding all this.
 # Need a wrapper which isnt pickled, or look up how to specify what gets pickled
 handles = []
@@ -70,28 +80,49 @@ pool = None
 
 class State(object):
   def __init__(self):
-    self._graph = nx.DiGraph()
+    self._G = nx.DiGraph()
     self._all = {}
+
+  @staticmethod
+  def load():
+    try:
+      return pickle.load(file('.ginpickle', 'r'))
+    except Exception as e:
+      print e
+      return None
 
   def save(self):
     pickle.dump(self, file('.ginpickle', 'w'))
 
-  def add(self, target, outputs, function, arguments, deps):
+
+  def add(self, node):
+    if node in self._all:
+      # TODO: need to do hashing and equality
+      assert node == self._all[node]
+      return
+
     data = Data(target, function, arguments, deps)
     self._add_data(data)
 
 
   def _add_data(self, data):
+    # It's OK to add it multiple times
+    if data.target in self._all:
+      assert data == self._all[data.target]
+
     self._all[data.target] = data
 
     if data.deps:
-      self._add_to_graph(data)
+      self._add_to_G(data)
 
 
-  def _add_to_graph(self, data):
-    assert data.deps != None
+  def _add_to_G(self, data):
+    assert data.deps
     for d in data.deps:
-      self._graph.add_edge(d, data.target)
+      self._G.add_edge(d, data.target)
+
+# TODO: not in my version of networkx
+#    assert len(nx.algorithms.cycles.simple_cycles(self._G)) == 0
 
 
   def needs_building(self, data):
@@ -112,32 +143,30 @@ class State(object):
   def process(self):
     global pool, handles, state
     state = self # HACK: this is getting irritating
-    pool = multiprocessing.Pool(2)
+    pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
     handles = []
 
     # Get the deps we don't know
     for data in [d for d in self._all.values() if d.deps == None]:
       self.build(data)
 
-    for (handle, data) in handles:
-      while not handle.ready():
-        print "waiting for " + data.target
-        time.sleep(0.2)
-      assert handle.successful()
-      handle.wait()
-
+    # TODO: we shouldn't need to wait for this to continue, but it simplifies
+    # it for now.
     pool.close()
     pool.join()
 
-    # TODO: must we wait for all our deps, or can we go ahead
-    # with what we know
     for data in self._all.values():
       assert(data.deps)
 
 
-
     # We now have a full dependency-tree. Do a breadth-first search from the roots.
-    for data in self.bfs():
+    roots = [n for n,d in self._G.in_degree().items() if d == 0]
+    print roots
+    sys.exit(0)
+    for data in nx.algorithms.traversal.breadth_first_search.bfs_edges(self._G):
+                
+      print data.target
+      sys.exit(0)
       if self.needs_building(data):
         self.build(data)
 
