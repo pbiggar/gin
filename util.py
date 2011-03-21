@@ -50,7 +50,7 @@ def find_filetypes(types):
   return sources
 
 
-def run(args, stdin=None):
+def run(args, stdin=None, display=False):
   class ThreadWorker(threading.Thread):
     def __init__(self, pipe):
       super(ThreadWorker, self).__init__()
@@ -67,7 +67,8 @@ def run(args, stdin=None):
 
   try:
     args = [str(a) for a in args] # convert to strs
-    print subprocess.list2cmdline(args)
+    if display:
+      print subprocess.list2cmdline(args)
 
     stdin_pipe = subprocess.PIPE if stdin else None
     proc = subprocess.Popen(args, stdin=stdin_pipe, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

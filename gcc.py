@@ -1,22 +1,16 @@
 import util
 import os
 
-def run(args, stdin=None):
-  out, err, exit = util.run(args, stdin)
+def run(args, **kwargs):
+  out, err, exit = util.run(args, **kwargs)
   return exit
 
-def check_run(args, stdin=None):
-  out, err, exit = util.run(args, stdin)
+def check_run(args, **kwargs):
+  out, err, exit = util.run(args, **kwargs)
   if exit != 0:
     print out
     print err
     raise Exception("Building failed: " + str(args))
-
-def get_output_file(filename):
-  return filename + '.o'
-
-def get_deps_file(filename):
-  return filename + '.deps'
 
 
 def get_compiler(filenames):
@@ -37,21 +31,12 @@ def get_compiler(filenames):
     return 'gcc'
 
 def configure_test(source, language):
-  exit = run(['ccache', 'gcc', '-c', '-x', language.lower(), '-'], source)
+  exit = run(['ccache', 'gcc', '-c', '-x', language.lower(), '-'], stdin=source, display=False)
   return exit == 0
-
-
-def read_deps_file(string):
-  lines = string.split()
-
-  lines = [l for l in lines if l != '\\' and l[-1:] != ':']
-
-  return lines
 
 
 def build_object(filename, includes, defs):
   obj = get_output_file (filename)
-  deps_file = get_deps_file (filename)
   compiler = get_compiler([filename])
 
   defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
@@ -59,12 +44,7 @@ def build_object(filename, includes, defs):
 
   includes = ["-I" + i for i in includes]
 
-  check_run(['ccache', compiler, '-c', filename, '-o', obj, '-MT', obj, '-MD', '-MP', '-MF', deps_file] + includes + defs)
-
-  deps = file(deps_file).read()
-  deps = read_deps_file(deps)
-
-  return deps
+  check_run(['ccache', compiler, '-c', filename, '-o', obj, '-MT', obj] + includes + defs)
 
 
 

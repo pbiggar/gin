@@ -5,38 +5,7 @@ import util
 import networkx as nx
 import sys
 import time
-
-class Node(object):
-  def __init__(self, targets, deps):
-    self.target = targets
-    self.deps = deps
-
-    for t in targets:
-      assert isinstance(t, Node)
-
-    if deps:
-      for d in deps:
-        assert isinstance(d, Node)
-
-class FileNode(Node):
-  """A node representing files"""
-  def __init__(self, filename):
-    # There are no targets because we don't have a node to represent them
-    super(FileNode, self).__init__([], [])
-    self.filename = filename
-
-class FunctionNode(Node):
-  """A node which calls a function to generate the target from its dependencies. |deps| can be None, in which case |function| updates it after it's called."""
-  def __init__(self, targets, deps, function, args):
-    super(FunctionNode, self).__init__(targets, deps)
-    self.function = function
-    self.args = args
-
-
-class FactoringNode(Node):
-  """A node to factor edges.
-"Factor" is used in this context when discussing use-def graphs. Basically, We might have N targets which are all dependent on the same M nodes. Rather than adding M*N edges, you "factor" them by adding a FactoringNode, which sits between the edges, so you only have M+N+1 nodes."""
-  pass
+from depgraph import DependencyGraph
 
 ########################################
 # Multiprocessing interface
@@ -46,137 +15,110 @@ class FactoringNode(Node):
 state = None
 
 # We use a proxy to catch exceptions and return them to the parent
-def remote_proxy(function, args, kwargs, key):
-  try:
-    return (function(*args, **kwargs), key)
-  except Exception as e:
-    return e
-
-
-def local_callback(rval):
-
-  if isinstance(rval, Exception):
-    raise rval 
-
-  (deps, target) = rval
-  data = state._all[target]
-  data.deps = deps
-  state._add_data(data)
-
-
-def call_remotely(data):
-  return pool.apply_async(remote_proxy, (data.callback, data.arguments, {}, data.target), callback=local_callback)
-  
-
-########################################
-# Pickling
-########################################
-# TODO: state get's pickled, so perhaps it's not the best thing to be holding all this.
-# Need a wrapper which isnt pickled, or look up how to specify what gets pickled
-handles = []
-pool = None
+def remote_proxy(obj, method_name):
+  method = getattr(obj, method_name)
+  rval = method()
 
 
 
 class State(object):
-  def __init__(self):
-    self._G = nx.DiGraph()
-    self._all = {}
+  def __init__(self, dg=None):
+    self.dg = dg or DependencyGraph()
+    self.needs_rebuilding = {}
+    self.handles = {}
+    self.results = {}
+    self.already_built = set()
+    self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
+
+
 
   @staticmethod
   def load():
     try:
-      return pickle.load(file('.ginpickle', 'r'))
+      return State(pickle.load(file('.ginpickle', 'r')))
     except Exception as e:
       print e
       return None
 
+
   def save(self):
-    pickle.dump(self, file('.ginpickle', 'w'))
+    pickle.dump(self.dg, file('.ginpickle', 'w'))
 
 
-  def add(self, node):
-    if node in self._all:
-      # TODO: need to do hashing and equality
-      assert node == self._all[node]
-      return
 
-    data = Data(target, function, arguments, deps)
-    self._add_data(data)
-
-
-  def _add_data(self, data):
-    # It's OK to add it multiple times
-    if data.target in self._all:
-      assert data == self._all[data.target]
-
-    self._all[data.target] = data
-
-    if data.deps:
-      self._add_to_G(data)
-
-
-  def _add_to_G(self, data):
-    assert data.deps
-    for d in data.deps:
-      self._G.add_edge(d, data.target)
-
-# TODO: not in my version of networkx
-#    assert len(nx.algorithms.cycles.simple_cycles(self._G)) == 0
-
-
-  def needs_building(self, data):
-    for d in data.deps:
-      if util.timestamp(d) >= util.timestamp(data.target):
-        return True
-
-    return False
-
+  def call_remotely(self, data):
+    return self.pool.apply_async(remote_proxy, (data, data.process.__func__.__name__))
 
   def build(self, data):
-    global handles
-    handle = call_remotely(data)
-    handles += [(handle, data)]
+    if data in self.already_built:
+      return
+
+    print "building: " + str(data)
+
+    self.already_built.add(data)
+
+    handle = self.call_remotely(data)
+    self.handles[data] = handle
+
+  def check_dependencies(self, target):
+    if target not in self.needs_rebuilding:
+      self.needs_rebuilding[target] = True
+
+    for d in self.dependencies(target):
+      self.needs_rebuilding[target] |= self.check_dependencies(d)
+
+    return self.needs_rebuilding[target]
+
 
 
 
   def process(self):
-    global pool, handles, state
-    state = self # HACK: this is getting irritating
-    pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
-    handles = []
 
-    # Get the deps we don't know
-    for data in [d for d in self._all.values() if d.deps == None]:
-      self.build(data)
+    for t in self.targets():
+      self.check_dependencies(t)
 
-    # TODO: we shouldn't need to wait for this to continue, but it simplifies
-    # it for now.
-    pool.close()
-    pool.join()
+    # TODO: check the needs_rebuilding flag first
 
-    for data in self._all.values():
-      assert(data.deps)
+    # At this point, the depgraph nodes have needs_rebuilding set. Now we do a
+    # breadth-first search, starting with the roots.
+    for r in self.dg.roots():
+      self.build(r)
+
+    # When a handle is finished, check if the nodes that depends on it are
+    # ready to go.
+    while len(self.handles) > 0:
+      for d, h in self.handles.items():
+        if h.ready():
+          rval = h.get() # raises exception
+          self.results[d] = rval
+
+          del self.handles[d]
+
+          for s in self.dg.successors(d):
+            if len([p for p in self.dependencies(s) if p not in self.results]) == 0:
+              self.build(s)
+
+    self.pool.close()
+    self.pool.join()
 
 
-    # We now have a full dependency-tree. Do a breadth-first search from the roots.
-    roots = [n for n,d in self._G.in_degree().items() if d == 0]
-    print roots
-    sys.exit(0)
-    for data in nx.algorithms.traversal.breadth_first_search.bfs_edges(self._G):
-                
-      print data.target
-      sys.exit(0)
-      if self.needs_building(data):
-        self.build(data)
+    print ("And we're done");
 
-      if build:
-        handle = pool.apply_async(data.callback, data.arguments)
-        results += [(data, handle)]
-      else:
-        print "No need to build: " + data.target
 
-    for data, handle in results:
-      data.deps = handle.get()
-      #print "Adding deps to %s (%s): %s" % (data.target, str(data), str(data.deps))
+
+
+  def targets(self):
+    # Not all leaves are targets, but I'm not sure there's a good way to find
+    # targets right now, so just go with leaves.
+    """All the leaf targets in the system"""
+    return self.dg.leaves()
+
+
+  def __getattr__(self, name):
+    if name in ['add_edge', 'dump_graphviz', 'dependencies']:
+      return getattr(self.dg, name)
+
+    # TODO: wrong error returned here
+
+
 

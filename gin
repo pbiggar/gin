@@ -1,12 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python 
 
 # Read from the status file
 import yaml
-import gcc
 import sys
 import state
-from state import FunctionNode, FileNode
 import pprint
+import configure
+import build
 
 def read_ginfile():
   stream = file("ginfile", "r")
@@ -14,117 +14,17 @@ def read_ginfile():
   stream.close()
   return ginfile
 
-def configure_meta_information(ginfile):
-  meta = ginfile["meta"]
-  return [
-    '#define PACKAGE "%s"\n' % (meta["name"]),
-    '#define VERSION "%s"\n' % (meta["version"]),
-  ]
-
-def configure_standard_dirs(ginfile):
-  name = ginfile["meta"]["name"]
-
-  prefix = "/usr/local"
-  datadir = prefix + "/share"
-  libdir = prefix + "/lib"
-  pkglibdir = prefix + "/" + name
-  return [
-    '#define DATADIR "%s"\n' % (datadir),
-    '#define PKGLIBDIR "%s"\n' % (pkglibdir),
-  ]
-
-
-# For multi-processing
-def run_check(check):
-  name = check["name"]
-  print "Checking for " + name + '....',
-  works = gcc.configure_test(check["test-program"], check["language"])
-  print "yes" if works else "no"
-
-  if works:
-    defines = check.get("defines", [])
-    libraries = check.get("libraries", [])
-    return (defines, libraries)
-  return ([], [])
-
-
-def configure_checks(ginfile):
-  checks = ginfile["configure"]
-  for t in ginfile["targets"].values():
-    checks.update (t["configure"])
-
-  # Store the name in the object for passing to Pool.map
-  for name,check in checks.items():
-    check["name"] = name
-    state.add(FunctionNode(TODO, [], run_check, (check,)))
-
-  # Run checks in parallel
-  from multiprocessing import Pool
-  p = Pool(5)
-  results = p.map(run_check, checks.values())
-
-  libraries = [elem for tup in results for elem in tup[1]]
-  libraries.sort()
-
-  defines = [elem for tup in results for elem in tup[0]]
-  lines = []
-  for define in defines:
-    if type(define) == 'dict':
-      lines.append ('#define %s "%s"\n' % (define.keys()[0], define.values()[0]))
-    else:
-      lines.append ('#define %s\n' % (define))
-  lines.sort()
-
-  return (libraries, lines)
-
-
-
-def configure(state, ginfile):
-
-  (libraries, check_lines) = configure_checks(ginfile)
-  meta_lines = configure_meta_information(ginfile)
-  dir_lines = configure_standard_dirs(ginfile)
-
-  def write_config_file(check_lines):
-    config = file("config.h", "w")
-
-    for l in meta_lines + dir_lines + check_lines:
-      config.write(l)
-    config.close()
-
-  state.add(FunctionNode([FileNode("config.h")], 
-
-  return libraries
-
-
-def build(state, ginfile, config_libs):
-
-  targets = ginfile["targets"]
-  for (name, struct) in targets.items():
-    files = struct["files"]
-    libs = struct["libraries"] + config_libs
-    includes = struct["includes"]
-    includes += ['.'] # For config.h
-    defs = {"HAVE_CONFIG_H": None}
-
-    objs = []
-    for f in files:
-      obj = FileNode(gcc.get_output_file(f))
-      objs += [obj]
-      state.add(FunctionNode([obj], None, gcc.build_object, (f, includes, defs)))
-
-    # link steps
-    state.add(FunctionNode([name], objs, gcc.link, (name, objs, libs), objs))
-
 
 def main():
-  ginstate = state.State.load()
+#  ginstate = state.State.load()
+  ginstate = None # until we control how state is serialized, dont do this
   try:
-    # TODO: Don't forget to make this depend on ginfile
     if not ginstate:
       ginstate = state.State()
       ginfile = read_ginfile()
-      build(ginstate, ginfile, configure(ginstate, ginfile))
+      config_node = configure.configure(ginstate, ginfile)
+      build.build(ginstate, config_node, ginfile)
+      ginstate.dump_graphviz()
 
     ginstate.process()
 
@@ -133,10 +33,10 @@ def main():
     raise
 
   finally:
-    print "Saving state"
-    ginstate.save()
+    if ginstate:
+      print "Saving state"
+      ginstate.save()
 
 
 if __name__ == "__main__":
   main()
-
