@@ -32,10 +32,10 @@ def main():
     print "Error"
     raise
 
-  finally:
-    if ginstate:
-      print "Saving state"
-      ginstate.save()
+#  finally:
+#    if ginstate:
+#      print "Saving state"
+#      ginstate.save()
 
 
 if __name__ == "__main__":
