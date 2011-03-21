@@ -141,6 +141,10 @@ class Configure(object):
   def __init__(self):
     self.name = "configure"
 
+  def process(self, dependencies):
+    print dependencies
+    raise TODO
+
 class ConfigDotH(object):
   pass
 
@@ -149,12 +153,26 @@ class ConfigureCheck(object):
     self.name = name
     self._settings = kwargs
 
-  def process(self):
-    print "Checking for " + self.name + '....',
-    works = gcc.configure_test(self._settings["test-program"], self._settings["language"])
-    print "yes" if works else "no"
+  def process(self, dependencies):
+    success = gcc.configure_test(self._settings["test-program"], self._settings["language"])
 
-    return works
+    if not success and "error-if-missing" in self._settings:
+      return False
+
+    return True
+
+
+  def result_string(self):
+    result = "Checking for " + self.name + '....'
+    result += "yes" if self.success else "no"
+
+    if not self.success:
+      for key in ["warn-if-missing", "error-if-missing"]:
+        if key in self._settings:
+          result += self._settings[key]
+
+    return result
+
 
 
   def __str__(self):
