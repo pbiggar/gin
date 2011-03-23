@@ -36,11 +36,11 @@ def compile(input=None, target=None, includes=None, defs=None):
   return ['ccache', compiler, '-c', input, '-o', target] + includes + defs
 
 
-def link(output_file, objects, libs):
+def link(target, objects, libs):
   compiler = get_compiler(objects)
 
    # rpath -L/usr/lib -L/usr/local/lib -R/usr/local/lib -ldl
 
   libs = ["-l" + l for l in libs]
 
-  return ['ccache', compiler, '-o', output_file] + objects + libs
+  return ['ccache', compiler, '-o', target] + objects + libs

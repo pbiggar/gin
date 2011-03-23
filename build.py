@@ -6,6 +6,10 @@ class ObjectFile(state.BaseNode):
   def __init__(self, output_file):
     self.output_file = output_file
 
+  def run(self, dependencies):
+    pass
+
+
 class CompilerNode(state.BaseNode):
 
   def run_command(self, command):
@@ -43,7 +47,7 @@ class Link(CompilerNode):
 
   def run(self, dependencies):
     # get the objects directly from the graph
-    objs = [d.filename for d in dependencies]
+    objs = [d.output_file for d in dependencies]
     command = gcc.link(target=self.target, objects=objs, libs=self.libs)
     return self.run_command(command)
 
@@ -51,6 +55,9 @@ class Link(CompilerNode):
 class Executable(object):
   def __init__(self, output_file):
     self.output_file = output_file
+
+  def run(self, dependencies):
+    pass
 
 def build(state, config_node, ginfile):
   for (target_name, struct) in ginfile["targets"].items():
