@@ -1,10 +1,26 @@
 import gcc
+import state
+import util
 
-class ObjectFile(object):
+class ObjectFile(state.BaseNode):
   def __init__(self, output_file):
     self.output_file = output_file
 
-class Compile(object):
+class CompilerNode(state.BaseNode):
+
+  def run_command(self, command):
+    self.out, self.err, exit = util.run(command, display=True)
+    return exit == 0
+
+  def result_string(self):
+    return self.out + "\n" + self.err
+
+
+
+
+
+
+class Compile(CompilerNode):
   def __init__(self, input_file, defs=[], includes=[]):
     self.input_file = input_file
     self.output_file = Compile.get_output_file(input_file)
@@ -16,17 +32,20 @@ class Compile(object):
     return filename + '.o'
 
   def run(self, dependencies):
-    # We don't need to query anything from the dependencies
-    return gcc.compile(input=self.input_file, target=self.output_file, defs=self.defs, includes=self.includes)
+    command = gcc.compile(input=self.input_file, target=self.output_file, defs=self.defs, includes=self.includes)
+    return self.run_command(command)
 
-class Link(object):
+
+class Link(CompilerNode):
   def __init__(self, target, libs):
     self.target = target
     self.libs = libs
 
   def run(self, dependencies):
     # get the objects directly from the graph
-    gcc.link(target=self.target, objects=[d.filename for d in dependencies], libs=self.libs)
+    objs = [d.filename for d in dependencies]
+    command = gcc.link(target=self.target, objects=objs, libs=self.libs)
+    return self.run_command(command)
 
 
 class Executable(object):

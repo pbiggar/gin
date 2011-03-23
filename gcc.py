@@ -1,17 +1,6 @@
 import util
 import os
 
-def run(args, **kwargs):
-  out, err, exit = util.run(args, **kwargs)
-  return exit
-
-def check_run(args, **kwargs):
-  out, err, exit = util.run(args, **kwargs)
-  if exit != 0:
-    print out
-    print err
-    raise Exception("Building failed: " + str(args))
-
 
 def get_compiler(filenames):
   """Return 'gcc' unless there are C++ files, in which case return 'g++'"""
@@ -30,8 +19,9 @@ def get_compiler(filenames):
   else:
     return 'gcc'
 
+
 def configure_test(source, language):
-  exit = run(['ccache', 'gcc', '-c', '-x', language.lower(), '-'], stdin=source, display=False)
+  _, _, exit = util.run(['ccache', 'gcc', '-c', '-x', language.lower(), '-'], stdin=source, display=False)
   return exit == 0
 
 
@@ -43,8 +33,7 @@ def compile(input=None, target=None, includes=None, defs=None):
 
   includes = ["-I" + i for i in includes]
 
-  check_run(['ccache', compiler, '-c', input, '-o', target] + includes + defs)
-
+  return ['ccache', compiler, '-c', input, '-o', target] + includes + defs
 
 
 def link(output_file, objects, libs):
@@ -54,4 +43,4 @@ def link(output_file, objects, libs):
 
   libs = ["-l" + l for l in libs]
 
-  check_run(['ccache', compiler, '-o', output_file] + objects + libs)
+  return ['ccache', compiler, '-o', output_file] + objects + libs

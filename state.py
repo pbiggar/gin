@@ -38,7 +38,6 @@ class BaseNode(object):
 
 
 
-
 class State(object):
   def __init__(self, dg=None):
     self.dg = dg or DependencyGraph()
