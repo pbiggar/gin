@@ -4,6 +4,7 @@ import time
 import util
 import networkx as nx
 import sys
+import traceback
 import time
 from depgraph import DependencyGraph
 
@@ -12,12 +13,29 @@ from depgraph import DependencyGraph
 ########################################
 
 # Why does multiprocessing require such hacks
-state = None
 
 # We use a proxy to catch exceptions and return them to the parent
-def remote_proxy(obj, method_name):
-  method = getattr(obj, method_name)
-  rval = method()
+def remote_proxy(obj, args, kwargs):
+  try:
+    rval = obj.run(*args, **kwargs)
+  except Exception, e:
+    traceback.print_exc(e)
+    raise e
+
+
+class BaseNode(object):
+  """Base class for all nodes in the dependencyGraph."""
+ 
+  def run(self, *args, **kwargs):
+    self.process(*args, **kwargs)
+    print self.result_string()
+
+  def result_string(self):
+    return ""
+
+
+
+
 
 
 
@@ -45,20 +63,22 @@ class State(object):
     pickle.dump(self.dg, file('.ginpickle', 'w'))
 
 
-
   def call_remotely(self, data):
-    return self.pool.apply_async(remote_proxy, (data, data.process.__func__.__name__))
+    deps = self.dependencies(data)
+    return self.pool.apply_async(remote_proxy, (data, [deps], {}))
 
-  def build(self, data):
+
+  def start_build(self, data):
     if data in self.already_built:
       return
 
-    print "building: " + str(data)
+#    print "building: " + str(data)
 
     self.already_built.add(data)
 
     handle = self.call_remotely(data)
     self.handles[data] = handle
+
 
   def check_dependencies(self, target):
     if target not in self.needs_rebuilding:
@@ -82,21 +102,26 @@ class State(object):
     # At this point, the depgraph nodes have needs_rebuilding set. Now we do a
     # breadth-first search, starting with the roots.
     for r in self.dg.roots():
-      self.build(r)
+      self.start_build(r)
 
     # When a handle is finished, check if the nodes that depends on it are
     # ready to go.
     while len(self.handles) > 0:
       for d, h in self.handles.items():
         if h.ready():
-          rval = h.get() # raises exception
+          try:
+            rval = h.get() # raises exception
+          except:
+            print "Remote exception"
+            sys.exit(1)
+
           self.results[d] = rval
 
           del self.handles[d]
 
           for s in self.dg.successors(d):
             if len([p for p in self.dependencies(s) if p not in self.results]) == 0:
-              self.build(s)
+              self.start_build(s)
 
     self.pool.close()
     self.pool.join()

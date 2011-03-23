@@ -1,100 +1,8 @@
 import sys
 import pprint
 import gcc
+import state
 
-def meta_information(ginfile):
-  meta = ginfile["meta"]
-  return [
-    '#define PACKAGE "%s"\n' % (meta["name"]),
-    '#define VERSION "%s"\n' % (meta["version"]),
-  ]
-
-def standard_dirs(ginfile):
-  name = ginfile["meta"]["name"]
-
-  prefix = "/usr/local"
-  datadir = prefix + "/share"
-  libdir = prefix + "/lib"
-  pkglibdir = prefix + "/" + name
-  return [
-    '#define DATADIR "%s"\n' % (datadir),
-    '#define PKGLIBDIR "%s"\n' % (pkglibdir),
-  ]
-
-
-
-def checks(ginfile):
-  checks = ginfile["configure"]
-  for t in ginfile["targets"].values():
-    checks.update (t["configure"])
-
-  # Store the name in the object for passing to Pool.map
-  for name,check in checks.items():
-    check["name"] = name
-    state.add(FunctionNode(TODO, [], run_check, (check,)))
-
-  libraries = []
-  defines = []
-  for check in checks.values():
-    (ds, ls) = run_check(check)
-    libraries += ls
-    defines += ds
-
-  libraries.sort()
-
-  lines = []
-  for define in defines:
-    if type(define) == 'dict':
-      lines.append ('#define %s "%s"\n' % (define.keys()[0], define.values()[0]))
-    else:
-      lines.append ('#define %s\n' % (define))
-  lines.sort()
-
-  return (libraries, lines)
-
-def write_config_file(check_lines, meta_lines, dir_lines):
-  config = file("config.h", "w")
-
-  for l in meta_lines + dir_lines + check_lines:
-    config.write(l)
-  config.close()
-
-
-def add_config_file(state, ginfile):
-  meta_lines = meta_information(ginfile)
-  dir_lines = standard_dirs(ginfile)
-  state.add(Proc(write_config_file, (check_lines, meta_lines, dir_lines)))
-
-
-def run_check(check):
-  name = check["name"]
-  print "Checking for " + name + '....',
-  works = gcc.configure_test(check["test-program"], check["language"])
-  print "yes" if works else "no"
-
-  if works:
-    defines = check.get("defines", [])
-    libraries = check.get("libraries", [])
-    return (defines, libraries)
-  return ([], [])
-
-
-  libraries = []
-  defines = []
-  for check in checks.values():
-    (ds, ls) = run_check(check)
-    libraries += ls
-    defines += ds
-
-  libraries.sort()
-
-  lines = []
-  for define in defines:
-    if type(define) == 'dict':
-      lines.append ('#define %s "%s"\n' % (define.keys()[0], define.values()[0]))
-    else:
-      lines.append ('#define %s\n' % (define))
-  lines.sort()
 
 
 # The configure node factors the configure checks. The configure node is needed
@@ -108,8 +16,8 @@ def run_check(check):
 # cn -/            \-------------------------> prog
 def configure(state, ginfile):
   checks = parse_configure_checks(state, ginfile)
-  config = add_configure(state, checks)
-  config_dot_h = add_config_dot_h(state, config, ginfile)
+  config_h = add_config_dot_h(state, checks, ginfile)
+  config = add_configure(state, checks, config_h)
   return config
 
 
@@ -124,39 +32,113 @@ def parse_configure_checks(state, ginfile):
   return [ConfigureCheck(name, **check) for name, check in checks.items()]
 
 
-def add_configure(state, checks):
+def add_configure(state, config, config_h):
+  # TODO: we probably don't need a configure node. Suppose we have a rule that
+  # depends on bison - we certainly need to check for bison before we run it,
+  # but we don't need to wait for a gcc check. But having a configure node
+  # holds that up.
   config = Configure()
-  for c in checks:
-    state.dg.add_edge(c, config)
+  state.dg.add_edge(config_h, config)
   return config
 
 
-def add_config_dot_h(state, config, ginfile):
-  config_h = ConfigDotH()
-  state.dg.add_edge(config, config_h)
+def add_config_dot_h(state, checks, ginfile):
+  config_h = ConfigDotH(ginfile)
+  for c in checks:
+    state.dg.add_edge(c, config_h)
+
+  # Most compilations will require config.h to be ready before they can begin,
+  # but we might not know that because the dependencies won't be ready until
+  # after the first compilation. So here we make Configure depend on config.h
+  # so that compilations won't start first.
+  return config_h
 
 
 
-class Configure(object):
+class Configure(state.BaseNode):
   def __init__(self):
     self.name = "configure"
 
   def process(self, dependencies):
-    print dependencies
-    raise TODO
+    self.libraries = []
+    for d in dependencies:
+      if hasattr(d, "libraries"):
+        self.libraries.extend(d.libraries)
 
-class ConfigDotH(object):
-  pass
+    return True
 
-class ConfigureCheck(object):
-  def __init__(self, name, **kwargs):
-    self.name = name
-    self._settings = kwargs
+
+class ConfigDotH(state.BaseNode):
+
+  def __init__(self, ginfile):
+    self.name = ginfile['meta']['name']
+    self.version = ginfile['meta']['version']
+
+  def _meta_information(self):
+    return [
+      '#define PACKAGE "%s"\n' % (self.name),
+      '#define VERSION "%s"\n' % (self.version),
+    ]
+
+  def _standard_dirs(self):
+    prefix = "/usr/local"
+    datadir = prefix + "/share"
+    libdir = prefix + "/lib"
+    pkglibdir = prefix + "/" + self.name
+    return [
+      '#define DATADIR "%s"\n' % (datadir),
+      '#define PKGLIBDIR "%s"\n' % (pkglibdir),
+    ]
+
+  def _write_config_file(self, meta_lines, dir_lines, define_lines):
+    config = file("config.h", "w")
+
+    for l in meta_lines + dir_lines + define_lines:
+      config.write(l)
+    config.close()
+
+
+  def _define_lines(self, dependencies):
+    defines = {}
+    for d in dependencies:
+      defines.update(d.defines)
+
+    lines = []
+    for define in defines:
+      if type(define) == 'dict':
+        lines.append ('#define %s "%s"\n' % (define.keys()[0], define.values()[0]))
+      else:
+        lines.append ('#define %s\n' % (define))
+    lines.sort()
+
+    return lines
+
 
   def process(self, dependencies):
-    success = gcc.configure_test(self._settings["test-program"], self._settings["language"])
+    meta_lines = self._meta_information()
+    dir_lines = self._standard_dirs()
+    define_lines = self._define_lines(dependencies)
+    self._write_config_file(meta_lines, dir_lines, define_lines)
 
-    if not success and "error-if-missing" in self._settings:
+
+
+class ConfigureCheck(state.BaseNode):
+  def __init__(self, name, **kwargs):
+    self.name = name
+    self.test_program = kwargs['test-program']
+    self.language = kwargs['language']
+    self.error_if_missing = kwargs.get('error-if-missing', None)
+    self.warn_if_missing = kwargs.get('warn-if-missing', None)
+    self.libraries = kwargs.get('libraries', [])
+    self.type = kwargs.get('type', None)
+    self.help = kwargs.get('help', None)
+    self.defines = kwargs.get('defines', {})
+    # TODO else block - ugly!
+
+  def process(self, dependencies):
+    self.success = gcc.configure_test(self.test_program, self.language)
+
+    if not self.success and self.error_if_missing:
       return False
 
     return True
@@ -167,9 +149,10 @@ class ConfigureCheck(object):
     result += "yes" if self.success else "no"
 
     if not self.success:
-      for key in ["warn-if-missing", "error-if-missing"]:
-        if key in self._settings:
-          result += self._settings[key]
+      for val in [self.warn_if_missing, self.error_if_missing]:
+        if val:
+          result += "\n"
+          result += val
 
     return result
 
