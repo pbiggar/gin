@@ -8,6 +8,8 @@ class Compile(object):
   def __init__(self, input_file, defs=[], includes=[]):
     self.input_file = input_file
     self.output_file = Compile.get_output_file(input_file)
+    self.defs = defs
+    self.includes = includes
 
   @staticmethod
   def get_output_file(filename):
@@ -15,7 +17,7 @@ class Compile(object):
 
   def run(self, dependencies):
     # We don't need to query anything from the dependencies
-    return gcc.compile(target=self.output_file, defs=self.defs, includes=self.includes)
+    return gcc.compile(input=self.input_file, target=self.output_file, defs=self.defs, includes=self.includes)
 
 class Link(object):
   def __init__(self, target, libs):

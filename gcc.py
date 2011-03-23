@@ -35,16 +35,15 @@ def configure_test(source, language):
   return exit == 0
 
 
-def build_object(filename, includes, defs):
-  obj = get_output_file (filename)
-  compiler = get_compiler([filename])
+def compile(input=None, target=None, includes=None, defs=None):
+  compiler = get_compiler([input])
 
   defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
        + ["-D%s" % (k) for (k,v) in defs.items() if v == None]
 
   includes = ["-I" + i for i in includes]
 
-  check_run(['ccache', compiler, '-c', filename, '-o', obj, '-MT', obj] + includes + defs)
+  check_run(['ccache', compiler, '-c', input, '-o', target] + includes + defs)
 
 
 
