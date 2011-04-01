@@ -17,24 +17,24 @@ from depgraph import DependencyGraph
 # We use a proxy to catch exceptions and return them to the parent
 def remote_proxy(obj, args, kwargs):
   try:
-    rval = obj.run(*args, **kwargs)
+    return obj.run_task(*args, **kwargs)
   except Exception, e:
     traceback.print_exc(e)
     raise e
 
 
 class BaseNode(object):
-  """Base class for all nodes in the dependencyGraph."""
- 
-  def run(self, *args, **kwargs):
-    self.process(*args, **kwargs)
-    print self.result_string()
+  """Base class for all nodes in the DependencyGraph."""
 
-  def result_string(self):
-    return ""
+  def __init__(self):
+    self.message = ""
+    self.success = True
 
+  def run_task(self, *args, **kwargs):
+    """Returns a dictionary of the fields added by the task. We return a dictionary since the actual task's data isn't sychronized back."""
 
-
+    self.success = self.run(*args, **kwargs)
+    return self.__dict__
 
 
 
@@ -63,7 +63,10 @@ class State(object):
 
 
   def call_remotely(self, data):
-    deps = self.dependencies(data)
+    deps = {}
+    for d in self.dependencies(data):
+      deps[d] = self.results[d]
+
     return self.pool.apply_async(remote_proxy, (data, [deps], {}))
 
 
@@ -114,12 +117,20 @@ class State(object):
             print "Remote exception"
             sys.exit(1)
 
+          print rval["message"],
+
           self.results[d] = rval
 
           del self.handles[d]
 
           for s in self.dg.successors(d):
-            if len([p for p in self.dependencies(s) if p not in self.results]) == 0:
+            build = True
+            for pred in self.dependencies(s): # the predecessors of the successor we want to build
+              if pred not in self.results or self.results[pred] == None:
+                build = False
+                break
+
+            if build:
               self.start_build(s)
 
     self.pool.close()

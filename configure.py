@@ -56,10 +56,8 @@ def add_config_dot_h(state, checks, ginfile):
 
 
 class Configure(state.BaseNode):
-  def __init__(self):
-    self.name = "configure"
 
-  def process(self, dependencies):
+  def run(self, dependencies):
     self.libraries = []
     for d in dependencies:
       if hasattr(d, "libraries"):
@@ -73,6 +71,7 @@ class ConfigDotH(state.BaseNode):
   def __init__(self, ginfile):
     self.name = ginfile['meta']['name']
     self.version = ginfile['meta']['version']
+    super(ConfigDotH, self).__init__()
 
   def _meta_information(self):
     return [
@@ -114,11 +113,12 @@ class ConfigDotH(state.BaseNode):
     return lines
 
 
-  def process(self, dependencies):
+  def run (self, dependencies):
     meta_lines = self._meta_information()
     dir_lines = self._standard_dirs()
     define_lines = self._define_lines(dependencies)
     self._write_config_file(meta_lines, dir_lines, define_lines)
+    return True
 
 
 
@@ -135,28 +135,21 @@ class ConfigureCheck(state.BaseNode):
     self.defines = kwargs.get('defines', {})
     # TODO else block - ugly!
 
-  def process(self, dependencies):
-    self.success = gcc.configure_test(self.test_program, self.language)
+  def run(self, dependencies):
+    success = gcc.configure_test(self.test_program, self.language)
 
-    if not self.success and self.error_if_missing:
-      return False
+    self.message = "Checking for " + self.name + '....'
+    self.message += "yes" if success else "no"
 
-    return True
-
-
-  def result_string(self):
-    result = "Checking for " + self.name + '....'
-    result += "yes" if self.success else "no"
-
-    if not self.success:
+    if not success:
       for val in [self.warn_if_missing, self.error_if_missing]:
         if val:
-          result += "\n"
-          result += val
+          self.message += "\n"
+          self.message += val
 
-    return result
+      if self.error_if_missing:
+        return False
 
+    # We don't actually fail unless |error_if_missing| is set.
+    return True
 
-
-  def __str__(self):
-    return "ConfigureCheck: " + self.name

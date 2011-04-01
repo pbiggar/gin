@@ -4,6 +4,7 @@ import util
 
 class ObjectFile(state.BaseNode):
   def __init__(self, output_file):
+    super(ObjectFile, self).__init__()
     self.output_file = output_file
 
   def run(self, dependencies):
@@ -13,19 +14,16 @@ class ObjectFile(state.BaseNode):
 class CompilerNode(state.BaseNode):
 
   def run_command(self, command):
-    self.out, self.err, exit = util.run(command, display=True)
-    return exit == 0
-
-  def result_string(self):
-    return self.out + "\n" + self.err
-
-
+    self.out, self.err, self.exit = util.run(command, display=True)
+    self.message = self.out + self.err
+    return self.exit == 0
 
 
 
 
 class Compile(CompilerNode):
   def __init__(self, input_file, defs=[], includes=[]):
+    super(Compile, self).__init__()
     self.input_file = input_file
     self.output_file = Compile.get_output_file(input_file)
     self.defs = defs
@@ -41,14 +39,27 @@ class Compile(CompilerNode):
 
 
 class Link(CompilerNode):
-  def __init__(self, target, libs):
+  def __init__(self, target):
+    super(Link, self).__init__()
     self.target = target
-    self.libs = libs
 
   def run(self, dependencies):
     # get the objects directly from the graph
-    objs = [d.output_file for d in dependencies]
-    command = gcc.link(target=self.target, objects=objs, libs=self.libs)
+    objs = [d.output_file for d in dependencies if hasattr(d, "output_file")]
+
+    # get all the libs from the dependencies
+    for d in dependencies:
+      if hasattr(d, "libraries"):
+        print "libs" + d.libraries
+      else:
+        print "NOLIBS"
+
+    raise TODO
+    libs = [d.libraries for d in dependencies if hasattr(d, "libraries")]
+    print libs
+    raise TODO
+
+    command = gcc.link(target=self.target, objects=objs, libs=libs)
     return self.run_command(command)
 
 
@@ -56,8 +67,9 @@ class Executable(object):
   def __init__(self, output_file):
     self.output_file = output_file
 
-  def run(self, dependencies):
+  def process(self, dependencies):
     pass
+
 
 def build(state, config_node, ginfile):
   for (target_name, struct) in ginfile["targets"].items():
@@ -80,9 +92,10 @@ def build(state, config_node, ginfile):
       objs += [obj]
 
     # The linker depends on all object files, and produces a target file
-    linker = Link(target_name, libs=struct["libraries"])
+    linker = Link(target_name)
     for obj in objs:
       state.dg.add_edge(obj, linker)
 
+    state.dg.add_edge(config_node, linker)
     state.dg.add_edge(linker, Executable(target_name))
 
