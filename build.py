@@ -1,24 +1,14 @@
 import gcc
 import state
 import util
+from state import TaskNode, FileNode
 
-class ObjectFile(state.BaseNode):
-  def __init__(self, output_file):
-    super(ObjectFile, self).__init__()
-    self.output_file = output_file
-
-  def run(self, dependencies):
-    pass
-
-
-class CompilerNode(state.BaseNode):
+class CompilerNode(TaskNode):
 
   def run_command(self, command):
     self.out, self.err, self.exit = util.run(command, display=True)
     self.message = self.out + self.err
     return self.exit == 0
-
-
 
 
 class Compile(CompilerNode):
@@ -63,15 +53,6 @@ class Link(CompilerNode):
     return self.run_command(command)
 
 
-class Executable(state.BaseNode):
-
-  def __init__(self, output_file):
-    super(Executable, self).__init__()
-    self.output_file = output_file
-
-  def process(self, dependencies):
-    pass
-
 
 def build(state, config_node, ginfile):
   for (target_name, struct) in ginfile["targets"].items():
@@ -88,7 +69,7 @@ def build(state, config_node, ginfile):
                   defs={"HAVE_CONFIG_H": None},
                   )
 
-      obj = ObjectFile(Compile.get_output_file(f))
+      obj = FileNode(Compile.get_output_file(f))
       state.dg.add_edge(c, obj)
       state.dg.add_edge(config_node, c)
       objs += [obj]
@@ -99,5 +80,5 @@ def build(state, config_node, ginfile):
       state.dg.add_edge(obj, linker)
 
     state.dg.add_edge(config_node, linker)
-    state.dg.add_edge(linker, Executable(target_name))
+    state.dg.add_edge(linker, FileNode(target_name))
 

@@ -3,12 +3,6 @@ import pydot
 import subprocess
 import util
 
-class GraphNode(object):
-  """Add graph traversal interface for DependencyGraph nodes"""
-
-  def __init__(self):
-    self.result = None
-
 
 class DependencyGraph(object):
   """An abstract and general graph representing dependencies. Properties of this graph:

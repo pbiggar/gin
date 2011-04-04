@@ -22,14 +22,27 @@ def remote_proxy(obj, args, kwargs):
     traceback.print_exc(e)
     raise e
 
+# All nodes are either tasknodes, or Filenodes. There should never be an edge
+# between two filenodes.
+class FileNode(object):
 
-class BaseNode(depgraph.GraphNode):
-  """Add the interface for DependencyGraph nodes."""
+  def __init__(self, filename):
+    self.filename = filename
+
+  def timestamp(self):
+    raise TODO
+
+  def signature(self):
+    raise TODO
+
+
+class TaskNode(object):
+  """Add graph traversal interface for DependencyGraph nodes"""
 
   def __init__(self):
-    super(BaseNode, self).__init__()
     self.message = ""
     self.success = True
+    self.result = None
 
   def run_task(self, *args, **kwargs):
     """Returns a dictionary of the fields added by the task. We return a dictionary since the actual task's data isn't sychronized back."""
@@ -79,10 +92,6 @@ class State(object):
 
     return False
     
-
-
-
-   
 
   def process(self):
     """Mark all nodes which need to be built. Rules:
