@@ -10,6 +10,13 @@ def find_all_files():
 
   return sources
 
+def flatten(_list):
+  result = []
+  for i in _list:
+    result.extend(i)
+
+  return result
+
 
 
 class Filename(object):
