@@ -69,9 +69,9 @@ class Configure(state.BaseNode):
 class ConfigDotH(state.BaseNode):
 
   def __init__(self, ginfile):
+    super(ConfigDotH, self).__init__()
     self.name = ginfile['meta']['name']
     self.version = ginfile['meta']['version']
-    super(ConfigDotH, self).__init__()
 
   def _meta_information(self):
     return [
@@ -124,6 +124,7 @@ class ConfigDotH(state.BaseNode):
 
 class ConfigureCheck(state.BaseNode):
   def __init__(self, name, **kwargs):
+    super(ConfigureCheck, self).__init__()
     self.name = name
     self.test_program = kwargs['test-program']
     self.language = kwargs['language']
@@ -147,9 +148,8 @@ class ConfigureCheck(state.BaseNode):
           self.message += "\n"
           self.message += val
 
-      if self.error_if_missing:
-        return False
+    self.message += "\n"
 
     # We don't actually fail unless |error_if_missing| is set.
-    return True
+    return success or not self.error_if_missing
 
