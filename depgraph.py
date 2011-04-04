@@ -1,6 +1,13 @@
 import networkx as nx
 import pydot
 import subprocess
+import util
+
+class GraphNode(object):
+  """Add graph traversal interface for DependencyGraph nodes"""
+
+  def __init__(self):
+    self.result = None
 
 
 class DependencyGraph(object):
@@ -82,4 +89,16 @@ class DependencyGraph(object):
 
   def successors(self, n):
     return self._G.successors(n)
+
+  def node_roots(self, n):
+    """Returns the set of roots which reach N."""
+    result = []
+    deps = self.dependencies(n)
+
+    # Base case
+    if len(deps) == 0:
+      return [n]
+
+    # Recursive case
+    return util.flatten([self.node_roots(d) for d in deps])
 

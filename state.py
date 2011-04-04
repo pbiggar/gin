@@ -6,7 +6,7 @@ import networkx as nx
 import sys
 import traceback
 import time
-from depgraph import DependencyGraph
+import depgraph
 
 ########################################
 # Multiprocessing interface
@@ -23,10 +23,11 @@ def remote_proxy(obj, args, kwargs):
     raise e
 
 
-class BaseNode(object):
-  """Base class for all nodes in the DependencyGraph."""
+class BaseNode(depgraph.GraphNode):
+  """Add the interface for DependencyGraph nodes."""
 
   def __init__(self):
+    super(BaseNode, self).__init__()
     self.message = ""
     self.success = True
 
@@ -40,13 +41,12 @@ class BaseNode(object):
 
 class State(object):
   def __init__(self, dg=None):
-    self.dg = dg or DependencyGraph()
-    self.needs_rebuilding = {}
-    self.handles = {}
-    self.results = {}
-    self.already_built = set()
-    self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
+    # Anything we want to serialize
+    self.dg = dg or depgraph.DependencyGraph()
 
+    # Things we can't serialize
+    self.handles = {}
+    self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
 
 
   @staticmethod
@@ -63,79 +63,98 @@ class State(object):
 
 
   def call_remotely(self, data):
-    deps = {}
-    for d in self.dependencies(data):
-      deps[d] = self.results[d]
-
-    return self.pool.apply_async(remote_proxy, (data, [deps], {}))
+    return self.pool.apply_async(remote_proxy, (data, [self.dependencies(data)], {}))
 
 
   def start_build(self, data):
-    if data in self.already_built:
-      return
-
-#    print "building: " + str(data)
-
-    self.already_built.add(data)
 
     handle = self.call_remotely(data)
     self.handles[data] = handle
 
+  def needs_rebuild(self, data):
 
-  def check_dependencies(self, target):
-    if target not in self.needs_rebuilding:
-      self.needs_rebuilding[target] = True
+    if data.timestamp < max([p.timestamp for p in self.predecessors(data)]):
+      # TODO: add md5sum
+      return True
 
-    for d in self.dependencies(target):
-      self.needs_rebuilding[target] |= self.check_dependencies(d)
-
-    return self.needs_rebuilding[target]
-
+    return False
+    
 
 
+
+   
 
   def process(self):
+    """Mark all nodes which need to be built. Rules:
+      - only build if it's a dependency of a target we're building
+      - if it has no dependency information, it must be built to get dependency information
+      - it it has dependency information, build it if any of its dependencies have changed.
+    """
 
-    for t in self.targets():
-      self.check_dependencies(t)
+    # TODO: read Mike Shia's paper here, and implement his algorithm.
+    # For the time being, do it the O(N) way: start at the roots, and push
+    # inwards. If we don't have to rebuild, keep pushing inwards, as some
+    # successors will still have to.
 
-    # TODO: check the needs_rebuilding flag first
 
-    # At this point, the depgraph nodes have needs_rebuilding set. Now we do a
-    # breadth-first search, starting with the roots.
-    for r in self.dg.roots():
-      self.start_build(r)
+    # We'll pretend this is true for now
+    targets = self.dg.leaves()
 
+    roots = util.flatten([self.dg.node_roots(t) for t in targets])
+
+
+    # We use a queue for this. We add nodes that are ready to be built to the
+    # queue. When they are built (or if they dont need to be built, we add
+    # their successors iff their successor's predecessors are all built.
+    queue = list(set(roots))
+
+    # TODO: ugly!!!! Tidy this code up for the love of god!
     # When a handle is finished, check if the nodes that depends on it are
     # ready to go.
-    while len(self.handles) > 0:
-      for d, h in self.handles.items():
-        if h.ready():
-          try:
-            rval = h.get() # raises exception
-          except:
-            print "Remote exception"
-            sys.exit(1)
+    while len(queue) > 0:
+      finished = False
+      data = queue.pop(0)
+      if data.result != None:
+        finished = True
+      else:
+        if data not in self.handles:
+          if self.needs_rebuild(data):
+            self.start_build(data)
+          else:
+            finished = True
+        else:
+          # check the build is finished
+          h = self.handles[data]
+          if h.ready():
+            try:
+              rval = h.get() # raises exception
+            except:
+              print "Remote exception"
+              raise
 
-          print rval["message"],
+            print rval["message"],
+            data.result = rval
+            del self.handles[data]
+            finished = True
 
-          self.results[d] = rval
 
-          del self.handles[d]
+      if not finished:
+        # push it to the back, we'll try it again later.
+        queue.append(data)
+      else:
+        # push succeesors
+        for s in self.dg.successors(data):
+          succ_ready = True
+          for pred in self.dependencies(s): # the predecessors of the successor we want to build
+            if pred.result == None:
+              succ_ready = False
+              break
+          if succ_ready:
+            queue.insert(0, s)
 
-          for s in self.dg.successors(d):
-            build = True
-            for pred in self.dependencies(s): # the predecessors of the successor we want to build
-              if pred not in self.results or self.results[pred] == None:
-                build = False
-                break
-
-            if build:
-              self.start_build(s)
 
     self.pool.close()
     self.pool.join()
-
 
     print ("And we're done");
 
