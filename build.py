@@ -63,8 +63,10 @@ class Link(CompilerNode):
     return self.run_command(command)
 
 
-class Executable(object):
+class Executable(state.BaseNode):
+
   def __init__(self, output_file):
+    super(Executable, self).__init__()
     self.output_file = output_file
 
   def process(self, dependencies):
