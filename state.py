@@ -75,18 +75,23 @@ class State(object):
     pickle.dump(self.dg, file('.ginpickle', 'w'))
 
 
-  def call_remotely(self, data):
-    return self.pool.apply_async(remote_proxy, (data, [self.dependencies(data)], {}))
+  def call_remotely(self, node):
+    return self.pool.apply_async(remote_proxy, (node, [self.dependencies(node)], {}))
 
 
-  def start_build(self, data):
+  def start_build(self, node):
 
-    handle = self.call_remotely(data)
-    self.handles[data] = handle
+    handle = self.call_remotely(node)
+    node.result = None
+    self.handles[node] = handle
 
-  def needs_rebuild(self, data):
+  def needs_rebuild(self, node):
 
-    if data.timestamp < max([p.timestamp for p in self.predecessors(data)]):
+    # If it's never been built before
+    if node.result == None:
+      return True
+
+    if node.timestamp < max([p.timestamp for p in self.predecessors(node)]):
       # TODO: add md5sum
       return True
 
@@ -122,18 +127,18 @@ class State(object):
     # ready to go.
     while len(queue) > 0:
       finished = False
-      data = queue.pop(0)
-      if data.result != None:
+      node = queue.pop(0)
+      if not isinstance(node, TaskNode):
         finished = True
       else:
-        if data not in self.handles:
-          if self.needs_rebuild(data):
-            self.start_build(data)
+        if node not in self.handles:
+          if self.needs_rebuild(node):
+            self.start_build(node)
           else:
             finished = True
         else:
           # check the build is finished
-          h = self.handles[data]
+          h = self.handles[node]
           if h.ready():
             try:
               rval = h.get() # raises exception
@@ -142,17 +147,17 @@ class State(object):
               raise
 
             print rval["message"],
-            data.result = rval
-            del self.handles[data]
+            node.result = rval
+            del self.handles[node]
             finished = True
 
 
       if not finished:
-        # push it to the back, we'll try it again later.
-        queue.append(data)
+        # We'll try it again later.
+        queue.append(node)
       else:
         # push succeesors
-        for s in self.dg.successors(data):
+        for s in self.dg.successors(node):
           succ_ready = True
           for pred in self.dependencies(s): # the predecessors of the successor we want to build
             if pred.result == None:
@@ -160,6 +165,8 @@ class State(object):
               break
           if succ_ready:
             queue.insert(0, s)
+          else:
+            pass # aNOTHER PREDECESSOR WILL GET THIS
 
 
     self.pool.close()
