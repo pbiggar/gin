@@ -17,23 +17,46 @@ import depgraph
 # We use a proxy to catch exceptions and return them to the parent
 def remote_proxy(obj, args, kwargs):
   try:
-    rval = obj.run_task(*args, **kwargs)
+    return obj.run_task(*args, **kwargs)
   except Exception, e:
     traceback.print_exc(e)
     raise e
 
-  return (rval, obj.__dict__)
-
 
 class BaseNode(object):
   """Base class for all nodes in the dependencyGraph."""
+
+class FileNode(object):
+  def __init__(self, filename):
+    self.filename = filename
+
+  def timestamp(self):
+    raise TODO
+
+  def signature(self):
+    raise TODO
+
+
+class TaskNode(object):
+  """Add graph traversal interface for DependencyGraph nodes"""
+
+  def __init__(self):
+    self.message = ""
+    self.success = True
+    self.result = None
+
+  def run_task(self, *args, **kwargs):
+    """Returns a dictionary of the fields added by the task. We return a dictionary since the actual task's data isn't sychronized back."""
+
+    self.success = self.run(*args, **kwargs)
+    return self.__dict__
 
 
 
 class State(object):
   def __init__(self, dg=None):
     # Anything we want to serialize
-    self.dg = dg or DependencyGraph()
+    self.dg = dg or depgraph.DependencyGraph()
     self.needs_building = {}
 
     # Things we can't serialize
@@ -72,6 +95,15 @@ class State(object):
 
     for d in self.dependencies(target):
       self.check_dependencies(d)
+
+  def needs_rebuild(self, node):
+
+    # If it's never been built before
+    if node.result == None:
+      return True
+
+    if node.timestamp < max([p.timestamp for p in self.predecessors(node)]):
+      # TODO: add md5sum
 
 
   def maybe_build(self, data):

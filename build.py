@@ -1,8 +1,7 @@
 import gcc
 import state
 import util
-from state import FileNode, TaskNode
-
+from state import TaskNode, FileNode
 
 class CompilerNode(TaskNode):
 
