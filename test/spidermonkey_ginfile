@@ -26,7 +26,6 @@ targets:
       - jsapi.cpp
       - jsarena.cpp
       - jsarray.cpp
-      - jsast.tbl
       - jsatom.cpp
       - jsbool.cpp
       - jsbuiltins.cpp
