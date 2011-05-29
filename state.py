@@ -36,6 +36,10 @@ class FileNode(object):
   def signature(self):
     raise TODO
 
+  def run_task(self, *args, **kwargs):
+    self.success = True
+    return self.__dict__
+
 
 class TaskNode(object):
   """Add graph traversal interface for DependencyGraph nodes"""
@@ -104,6 +108,7 @@ class State(object):
 
     if node.timestamp < max([p.timestamp for p in self.predecessors(node)]):
       # TODO: add md5sum
+      raise
 
 
   def maybe_build(self, data):
@@ -144,7 +149,7 @@ class State(object):
         for data, handle in self.handles.items():
           if handle.ready():
             try:
-              (rval, remote_dict) = handle.get() # raises exception
+              remote_dict = handle.get() # raises exception
             except:
               print "Remote exception"
               raise
@@ -155,10 +160,8 @@ class State(object):
             for k,v in remote_dict.items():
               setattr(data, k, v)
 
-            data.success = rval
-
             # Report errors
-            if not rval:
+            if not data.success:
               print "Failed: " + str(data)
               failures.append(data)
             else:
