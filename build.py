@@ -1,17 +1,10 @@
 import gcc
 import state
 import util
-from state import TaskNode, FileNode
-
-class ObjectFile(state.BaseNode):
-  def __init__(self, output_file):
-    self.output_file = output_file
-
-  def run(*args):
-    return True
+from state import FileNode, TaskNode
 
 
-class CompilerNode(state.BaseNode):
+class CompilerNode(TaskNode):
 
   def run_command(self, command):
     self.out, self.err, self.exit = util.run(command, display=True)

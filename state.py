@@ -17,7 +17,7 @@ import depgraph
 # We use a proxy to catch exceptions and return them to the parent
 def remote_proxy(obj, args, kwargs):
   try:
-    return obj.run_task(*args, **kwargs)
+    rval = obj.run_task(*args, **kwargs)
   except Exception, e:
     traceback.print_exc(e)
     raise e
