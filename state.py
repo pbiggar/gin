@@ -171,13 +171,16 @@ class State(object):
             for s in self.dg.successors(data):
               self.maybe_build(s)
 
+      print "Built";
+
     except:
       self.pool.terminate()
+      print "Build failed"
+      raise
     finally:
       self.pool.close()
       self.pool.join()
 
-    print "And we're done";
 
 
 

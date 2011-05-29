@@ -46,7 +46,7 @@ def add_config_dot_h(state, checks, ginfile):
   gen_config_h = GenConfigDotH(ginfile)
   for c in checks:
     state.dg.add_edge(c, gen_config_h)
-  config_h = FileNode("config.h")
+  config_h = FileNode(gen_config_h.filename)
   state.dg.add_edge(gen_config_h, config_h)
   return gen_config_h
 
@@ -75,6 +75,7 @@ class GenConfigDotH(TaskNode):
     super(GenConfigDotH, self).__init__()
     self.name = ginfile['meta']['name']
     self.version = ginfile['meta']['version']
+    self.filename = ginfile['meta']['config-file']
 
   def _meta_information(self):
     return [
@@ -93,7 +94,7 @@ class GenConfigDotH(TaskNode):
     ]
 
   def _write_config_file(self, meta_lines, dir_lines, define_lines):
-    config = file("config.h", "w")
+    config = file(self.filename, "w")
 
     for l in meta_lines + dir_lines + define_lines:
       config.write(l)

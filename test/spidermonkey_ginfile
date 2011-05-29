@@ -3,6 +3,7 @@ meta:
   version: 1.8.5
   mailing-list: dev-tech-js-engine@lists.mozilla.org
   website: http://developer.mozilla.org/En/SpiderMonkey
+  config-file: js-config.h
 
 targets:
   methodjit.a:
@@ -37,12 +38,12 @@ targets:
       - methodjit/TrampolineSparc.s
       - methodjit/TrampolineSUNWX64.s
       - methodjit/TrampolineSUNWX86.s
- 
+
   js:
     libraries:
       - methodjit.a
     files:
-     - ctypes/Library.cpp
+      - ctypes/Library.cpp
       - dtoa.c
       - editline/editline.c
       - editline/sysunix.c
