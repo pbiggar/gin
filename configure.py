@@ -59,7 +59,7 @@ class Configure(state.BaseNode):
   def __init__(self):
     self.name = "configure"
 
-  def process(self, dependencies):
+  def run(self, dependencies):
     self.libraries = []
     for d in dependencies:
       if hasattr(d, "libraries"):
@@ -114,11 +114,17 @@ class ConfigDotH(state.BaseNode):
     return lines
 
 
-  def process(self, dependencies):
+  def run(self, dependencies):
     meta_lines = self._meta_information()
     dir_lines = self._standard_dirs()
     define_lines = self._define_lines(dependencies)
-    self._write_config_file(meta_lines, dir_lines, define_lines)
+    try:
+      self._write_config_file(meta_lines, dir_lines, define_lines)
+      return True
+    except:
+      return False
+
+
 
 
 
@@ -135,10 +141,10 @@ class ConfigureCheck(state.BaseNode):
     self.defines = kwargs.get('defines', {})
     # TODO else block - ugly!
 
-  def process(self, dependencies):
-    self.success = gcc.configure_test(self.test_program, self.language)
+  def run(self, dependencies):
+    success = gcc.configure_test(self.test_program, self.language)
 
-    if not self.success and self.error_if_missing:
+    if not success and self.error_if_missing:
       return False
 
     return True

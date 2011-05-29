@@ -17,22 +17,16 @@ from depgraph import DependencyGraph
 # We use a proxy to catch exceptions and return them to the parent
 def remote_proxy(obj, args, kwargs):
   try:
-    return obj.run(*args, **kwargs)
+    rval = obj.run(*args, **kwargs)
   except Exception, e:
     traceback.print_exc(e)
     raise e
 
+  return (rval, obj.__dict__)
+
 
 class BaseNode(object):
   """Base class for all nodes in the dependencyGraph."""
- 
-  def run(self, *args, **kwargs):
-    self.process(*args, **kwargs)
-    print self.result_string()
-
-  def result_string(self):
-    return ""
-
 
 
 
@@ -85,7 +79,7 @@ class State(object):
 
   def maybe_build(self, data):
     """Build if the dependencies are met"""
-    if len([d for d in self.dependencies(data) if d not in self.results]) == 0:
+    if len([dep for dep in self.dependencies(data) if not getattr(dep, "success", False)]) == 0:
       self.start_build(data)
       return True
 
@@ -107,26 +101,42 @@ class State(object):
 
     # When a handle is finished, check if the nodes that depends on it are
     # ready to go.
-    while len(self.handles) > 0:
-      for d, h in self.handles.items():
-        if h.ready():
-          try:
-            rval = h.get() # raises exception
-            print rval
-          except:
-            print "Remote exception"
-            sys.exit(1)
+    try:
+      failures = []
+      while len(self.handles) > 0:
+        for data, handle in self.handles.items():
+          if handle.ready():
+            try:
+              (rval, remote_dict) = handle.get() # raises exception
+            except:
+              print "Remote exception"
+              raise
 
-          self.results[d] = rval
-          del self.handles[d]
+            del self.handles[data]
 
-          # Try building successors
-          for s in self.dg.successors(d):
-            self.maybe_build(s)
+            # Set the attributes from the remote object to the local object
+            for k,v in remote_dict.items():
+              setattr(data, k, v)
 
-    self.pool.close()
-    self.pool.join()
+            data.success = rval
 
+            # Report errors
+            if not rval:
+              print "Failed: " + str(data)
+              failures.append(data)
+            else:
+              print "Success: " + str(data)
+
+            # Try building successors
+            for s in self.dg.successors(data):
+              self.maybe_build(s)
+
+
+    finally:
+      self.pool.close()
+      self.pool.join()
+
+    print "Failures: " + str(failures)
 
     print ("And we're done");
 

@@ -6,8 +6,8 @@ class ObjectFile(state.BaseNode):
   def __init__(self, output_file):
     self.output_file = output_file
 
-  def run(self, dependencies):
-    pass
+  def run(*args):
+    return True
 
 
 class CompilerNode(state.BaseNode):
@@ -56,8 +56,6 @@ class Executable(object):
   def __init__(self, output_file):
     self.output_file = output_file
 
-  def run(self, dependencies):
-    pass
 
 def build(state, config_node, ginfile):
   for (target_name, struct) in ginfile["targets"].items():
