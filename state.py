@@ -6,7 +6,7 @@ import networkx as nx
 import sys
 import traceback
 import time
-from depgraph import DependencyGraph
+import depgraph
 
 ########################################
 # Multiprocessing interface
@@ -17,7 +17,7 @@ from depgraph import DependencyGraph
 # We use a proxy to catch exceptions and return them to the parent
 def remote_proxy(obj, args, kwargs):
   try:
-    rval = obj.run(*args, **kwargs)
+    return obj.run_task(*args, **kwargs)
   except Exception, e:
     traceback.print_exc(e)
     raise e
@@ -30,17 +30,15 @@ class BaseNode(object):
 
 
 
-
-
 class State(object):
   def __init__(self, dg=None):
+    # Anything we want to serialize
     self.dg = dg or DependencyGraph()
     self.needs_building = {}
-    self.handles = {}
-    self.results = {}
-    self.already_built = set()
-    self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
 
+    # Things we can't serialize
+    self.handles = {}
+    self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
 
 
   @staticmethod
@@ -56,9 +54,8 @@ class State(object):
     pickle.dump(self.dg, file('.ginpickle', 'w'))
 
 
-  def call_remotely(self, data):
-    deps = self.dependencies(data)
-    return self.pool.apply_async(remote_proxy, (data, [deps], {}))
+  def call_remotely(self, node):
+    return self.pool.apply_async(remote_proxy, (node, [self.dependencies(node)], {}))
 
 
   def start_build(self, data):
@@ -84,23 +81,31 @@ class State(object):
       return True
 
     return False
-
-
+   
 
   def process(self):
+    """Mark all nodes which need to be built. Rules:
+      - only build if it's a dependency of a target we're building
+      - if it has no dependency information, it must be built to get dependency information
+      - it it has dependency information, build it if any of its dependencies have changed.
+    """
+
+    # TODO: read Mike Shia's paper here, and implement his algorithm.
+    # For the time being, do it the O(N) way: start at the roots, and push
+    # inwards. If we don't have to rebuild, keep pushing inwards, as some
+    # successors will still have to.
 
     # Mark dependencies for the roots as needing building. We do this so that
     # we don't build roots that aren't needed for our targets.
     for t in self.targets():
       self.check_dependencies(t)
 
+
     # At this point, the depgraph nodes have needs_building set. Now we do a
     # breadth-first search, starting with the roots.
     for r in self.dg.roots():
       self.start_build(r)
 
-    # When a handle is finished, check if the nodes that depends on it are
-    # ready to go.
     try:
       failures = []
       while len(self.handles) > 0:
@@ -130,7 +135,6 @@ class State(object):
             # Try building successors
             for s in self.dg.successors(data):
               self.maybe_build(s)
-
 
     finally:
       self.pool.close()

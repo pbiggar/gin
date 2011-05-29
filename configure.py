@@ -1,7 +1,7 @@
 import sys
 import pprint
 import gcc
-import state
+from state import FileNode, TaskNode
 
 
 
@@ -16,8 +16,8 @@ import state
 # cn -/            \-------------------------> prog
 def configure(state, ginfile):
   checks = parse_configure_checks(state, ginfile)
-  config_h = add_config_dot_h(state, checks, ginfile)
-  config = add_configure(state, checks, config_h)
+  gen_config_h = add_config_dot_h(state, checks, ginfile)
+  config = add_configure(state, checks, gen_config_h)
   return config
 
 
@@ -43,9 +43,12 @@ def add_configure(state, config, config_h):
 
 
 def add_config_dot_h(state, checks, ginfile):
-  config_h = ConfigDotH(ginfile)
+  gen_config_h = GenConfigDotH(ginfile)
   for c in checks:
-    state.dg.add_edge(c, config_h)
+    state.dg.add_edge(c, gen_config_h)
+  config_h = FileNode("config.h")
+  state.dg.add_edge(gen_config_h, config_h)
+  return gen_config_h
 
   # Most compilations will require config.h to be ready before they can begin,
   # but we might not know that because the dependencies won't be ready until
@@ -55,9 +58,7 @@ def add_config_dot_h(state, checks, ginfile):
 
 
 
-class Configure(state.BaseNode):
-  def __init__(self):
-    self.name = "configure"
+class Configure(TaskNode):
 
   def run(self, dependencies):
     self.libraries = []
@@ -68,9 +69,10 @@ class Configure(state.BaseNode):
     return True
 
 
-class ConfigDotH(state.BaseNode):
+class GenConfigDotH(TaskNode):
 
   def __init__(self, ginfile):
+    super(GenConfigDotH, self).__init__()
     self.name = ginfile['meta']['name']
     self.version = ginfile['meta']['version']
 
@@ -126,10 +128,9 @@ class ConfigDotH(state.BaseNode):
 
 
 
-
-
-class ConfigureCheck(state.BaseNode):
+class ConfigureCheck(TaskNode):
   def __init__(self, name, **kwargs):
+    super(ConfigureCheck, self).__init__()
     self.name = name
     self.test_program = kwargs['test-program']
     self.language = kwargs['language']
@@ -144,25 +145,17 @@ class ConfigureCheck(state.BaseNode):
   def run(self, dependencies):
     success = gcc.configure_test(self.test_program, self.language)
 
-    if not success and self.error_if_missing:
-      return False
+    self.message = "Checking for " + self.name + '....'
+    self.message += "yes" if success else "no"
 
-    return True
-
-
-  def result_string(self):
-    result = "Checking for " + self.name + '....'
-    result += "yes" if self.success else "no"
-
-    if not self.success:
+    if not success:
       for val in [self.warn_if_missing, self.error_if_missing]:
         if val:
-          result += "\n"
-          result += val
+          self.message += "\n"
+          self.message += val
 
-    return result
+    self.message += "\n"
 
+    # We don't actually fail unless |error_if_missing| is set.
+    return success or not self.error_if_missing
 
-
-  def __str__(self):
-    return "ConfigureCheck: " + self.name
