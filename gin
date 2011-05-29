@@ -1,18 +1,14 @@
 #!/usr/bin/env python 
 
 # Read from the status file
-import yaml
-import sys
-import state
 import pprint
+import sys
+
+import state
 import configure
 import build
 
-def read_ginfile():
-  stream = file("ginfile", "r")
-  ginfile = yaml.load(stream)
-  stream.close()
-  return ginfile
+from ginfile import Ginfile
 
 
 def main():
@@ -21,7 +17,7 @@ def main():
   try:
     if not ginstate:
       ginstate = state.State()
-      ginfile = read_ginfile()
+      ginfile = Ginfile("ginfile")
       config_node = configure.configure(ginstate, ginfile)
       build.build(ginstate, config_node, ginfile)
       ginstate.dump_graphviz()
