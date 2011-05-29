@@ -45,7 +45,6 @@ class TaskNode(object):
   """Add graph traversal interface for DependencyGraph nodes"""
 
   def __init__(self):
-    self.message = ""
     self.success = True
     self.result = None
 
@@ -162,22 +161,23 @@ class State(object):
 
             # Report errors
             if not data.success:
-              print "Failed: " + str(data)
-              failures.append(data)
+              print "Failed: " + data.message
+              raise Exception("Stop")
             else:
-              print "Success: " + str(data)
+              if hasattr(data, "message"):
+                print data.message
 
             # Try building successors
             for s in self.dg.successors(data):
               self.maybe_build(s)
 
+    except:
+      self.pool.terminate()
     finally:
       self.pool.close()
       self.pool.join()
 
-    print "Failures: " + str(failures)
-
-    print ("And we're done");
+    print "And we're done";
 
 
 
