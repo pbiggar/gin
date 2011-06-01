@@ -161,7 +161,8 @@ class State(object):
 
             # Report errors
             if not data.success:
-              print "Failed: " + data.message
+              print "Failed building: " + data.input_file
+              print data.message
               raise Exception("Stop")
             else:
               if hasattr(data, "message"):
