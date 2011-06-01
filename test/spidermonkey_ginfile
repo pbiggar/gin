@@ -6,6 +6,14 @@ meta:
   config-file: js-config.h
 
 targets:
+  jscpucfg:
+    files:
+      - jscpucfg.cpp
+
+  jsautocfg.h:
+    command:
+      jscpucfg > jsautocfg.h
+      
   methodjit.a:
     includes:
       - assembler/
@@ -33,15 +41,33 @@ targets:
       - methodjit/StubCalls.cpp
       - methodjit/StubCompiler.cpp
       - methodjit/TrampolineCompiler.cpp
-      - methodjit/TrampolineMasmX64.asm
-      - methodjit/TrampolineMingwX64.s
-      - methodjit/TrampolineSparc.s
-      - methodjit/TrampolineSUNWX64.s
-      - methodjit/TrampolineSUNWX86.s
+
+  nanojit.a:
+    includes:
+      - nanojit/
+    files:
+      - nanojit/Allocator.cpp
+      - nanojit/Assembler.cpp
+      - nanojit/avmplus.cpp
+      - nanojit/CodeAlloc.cpp
+      - nanojit/Containers.cpp
+      - nanojit/Fragmento.cpp
+      - nanojit/LIR.cpp
+      - nanojit/NativeARM.cpp
+      - nanojit/Nativei386.cpp
+      - nanojit/NativeMIPS.cpp
+      - nanojit/NativePPC.cpp
+      - nanojit/NativeSH4.cpp
+      - nanojit/NativeSparc.cpp
+      - nanojit/NativeX64.cpp
+      - nanojit/njconfig.cpp
+      - nanojit/RegAlloc.cpp
+      - nanojit/VMPI.cpp
 
   js:
     libraries:
       - methodjit.a
+      - nanojit.a
     files:
       - ctypes/Library.cpp
       - dtoa.c
@@ -110,27 +136,9 @@ targets:
       - lirasm/lirasm.cpp
       - lock_sparcv8plus.il
       - lock_sparcv9.il
-
-      - nanojit/Allocator.cpp
-      - nanojit/Assembler.cpp
-      - nanojit/avmplus.cpp
-      - nanojit/CodeAlloc.cpp
-      - nanojit/Containers.cpp
-      - nanojit/Fragmento.cpp
-      - nanojit/LIR.cpp
-      - nanojit/NativeARM.cpp
-      - nanojit/Nativei386.cpp
-      - nanojit/NativeMIPS.cpp
-      - nanojit/NativePPC.cpp
-      - nanojit/NativeSH4.cpp
-      - nanojit/NativeSparc.cpp
-      - nanojit/NativeX64.cpp
-      - nanojit/njconfig.cpp
-      - nanojit/RegAlloc.cpp
-      - nanojit/VMPI.cpp
-      - perf/jsperf.cpp
-      - perf/pm_linux.cpp
-      - perf/pm_stub.cpp
+#      - perf/jsperf.cpp
+#      - perf/pm_linux.cpp
+#      - perf/pm_stub.cpp
       - prmjtime.cpp
       - sharkctl.cpp
       - shell/js.cpp

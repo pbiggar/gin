@@ -1,3 +1,5 @@
+import sys
+
 import gcc
 import state
 import util
@@ -40,9 +42,11 @@ class Link(CompilerNode):
     # get all the libs from the dependencies
     for d in dependencies:
       if hasattr(d, "libraries"):
-        print "libs" + d.libraries
+        print "libs" + str(d.libraries)
       else:
         print "NOLIBS"
+
+    sys.exit(0)
 
     raise TODO
     libs = [d.libraries for d in dependencies if hasattr(d, "libraries")]
@@ -57,28 +61,42 @@ class Link(CompilerNode):
 def build(state, config_node, ginfile):
   for (target_name, struct) in ginfile["targets"].items():
 
-    # The nodes for building a simple file look like this:
-    #  proc_1 -> objfile_1
-    #  ...
-    #  proc_n -> objfile_n
+    if struct['command']:
+      assert len (struct['files']) == 0
+      build_command(state, struct)
+    else:
+      assert len (struct['files']) > 0
+      build_file(state, target_name, struct, config_node)
 
-    objs = []
-    for f in struct['files']:
-      c = Compile(input_file=f,
-                  includes=struct["includes"] + ['.'],
-                  defs={"HAVE_CONFIG_H": None},
-                  )
+def build_command(state, struct):
+  print struct
+  sys.exit(0)
 
-      obj = FileNode(Compile.get_output_file(f))
-      state.dg.add_edge(c, obj)
-      state.dg.add_edge(config_node, c)
-      objs += [obj]
 
-    # The linker depends on all object files, and produces a target file
-    linker = Link(target_name)
-    for obj in objs:
-      state.dg.add_edge(obj, linker)
+def build_files(state, target_name, struct, config_node):
 
-    state.dg.add_edge(config_node, linker)
-    state.dg.add_edge(linker, FileNode(target_name))
+  # The nodes for building a simple file look like this:
+  #  proc_1 -> objfile_1
+  #  ...
+  #  proc_n -> objfile_n
+
+  objs = []
+  for f in struct['files']:
+    c = Compile(input_file=f,
+                includes=struct["includes"] + ['.'],
+                defs={"HAVE_CONFIG_H": None},
+                )
+
+    obj = FileNode(Compile.get_output_file(f))
+    state.dg.add_edge(c, obj)
+    state.dg.add_edge(config_node, c)
+    objs += [obj]
+
+  # The linker depends on all object files, and produces a target file
+  linker = Link(target_name)
+  for obj in objs:
+    state.dg.add_edge(obj, linker)
+
+  state.dg.add_edge(config_node, linker)
+  state.dg.add_edge(linker, FileNode(target_name))
 
