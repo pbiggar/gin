@@ -15,6 +15,7 @@ schema = {
   "targets": _defaultdict(),
   "includes": [],
   "libraries": [],
+  "files": [],
 }
 
 
