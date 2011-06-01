@@ -29,6 +29,14 @@ class Compile(CompilerNode):
     command = gcc.compile(input=self.input_file, target=self.output_file, defs=self.defs, includes=self.includes)
     return self.run_command(command)
 
+def Command(CompilerNode):
+  def __init__(self, command):
+    self.command = command
+
+  def run(self, dependencies):
+    return self.run_command(command)
+
+
 
 class Link(CompilerNode):
   def __init__(self, target):
@@ -61,16 +69,24 @@ class Link(CompilerNode):
 def build(state, config_node, ginfile):
   for (target_name, struct) in ginfile["targets"].items():
 
-    if struct['command']:
+    if struct['command'] != None:
       assert len (struct['files']) == 0
-      build_command(state, struct)
+      build_command(state, target_name, struct['command'], config_node)
     else:
       assert len (struct['files']) > 0
-      build_file(state, target_name, struct, config_node)
+      build_files(state, target_name, struct, config_node)
 
-def build_command(state, struct):
-  print struct
-  sys.exit(0)
+
+def build_command(state, target_name, command, config_node):
+  # Run the command
+  c = Command(command)
+
+  # TODO: should we really use config.h here?
+  state.dg.add_edge(config_node, c)
+
+  # Connect to the output file
+  state.dg.add_edge(c, FileNode(target_name))
+
 
 
 def build_files(state, target_name, struct, config_node):

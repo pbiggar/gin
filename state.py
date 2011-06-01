@@ -64,7 +64,9 @@ class State(object):
 
     # Things we can't serialize
     self.handles = {}
-    self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
+  #  self.pool = multiprocessing.Pool(multiprocessing.cpu_count() + 1)
+# make it deterministic for now
+    self.pool = multiprocessing.Pool(1)
 
 
   @staticmethod

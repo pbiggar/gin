@@ -16,6 +16,7 @@ schema = {
   "includes": [],
   "libraries": [],
   "files": [],
+  "command": None,
 }
 
 
