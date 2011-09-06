@@ -1,5 +1,7 @@
-import util
 import os
+import sys
+
+import util
 
 
 def get_compiler(filenames):
@@ -25,7 +27,7 @@ def configure_test(source, language):
   return exit == 0
 
 
-def compile(input=None, target=None, includes=None, defs=None):
+def compile(input, target, includes=None, defs=None):
   compiler = get_compiler([input])
 
   defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
@@ -44,3 +46,47 @@ def link(target, objects, libs):
   libs = ["-l" + l for l in libs]
 
   return ['ccache', compiler, '-o', target] + objects + libs
+
+def dependencies(input, includes, defs):
+  compiler = get_compiler([input])
+
+  defs = ["-D%s=%s" % (k,v) for (k,v) in defs.items() if v != None] \
+       + ["-D%s" % (k) for (k,v) in defs.items() if v == None]
+
+  includes = ["-I" + i for i in includes]
+
+  makefile_script = [compiler, '-c', input, '-M', '-MG'] + includes + defs
+  (out, err, exit) = util.run(makefile_script)
+  deps = parse_makefile_dependencies(out)
+  return deps
+
+def parse_makefile_dependencies(string):
+  """Parse a makefile dependency, of the form produced by gcc:
+      Nativei386.o: nanojit/Nativei386.cpp nanojit/nanojit.h nanojit/avmplus.h \
+        nanojit/VMPI.h /usr/include/assert.h /usr/include/sys/cdefs.h \
+        /usr/include/stdlib.h /usr/include/Availability.h
+  """
+
+  results = []
+
+  first = True
+  for line in string.split():
+
+    # On the first line, the target is preceeded by a colon - strip both
+    if first:
+      colon_index = line.find(":")
+      line = line[colon_index:]
+      first = False
+
+    # strip the end of lines
+    if line.endswith(" \\"):
+      line = line[:-2]
+
+    # Filenames can have spaces in them, which sorta screws us here. But this
+    # is a temporary hack til I get the latest version of tup, so it's fine for
+    # now.
+    results += line.split(" ")
+
+  return results
+
+

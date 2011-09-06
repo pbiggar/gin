@@ -128,16 +128,15 @@ class State(object):
       - it it has dependency information, build it if any of its dependencies have changed.
     """
 
-    # TODO: read Mike Shia's paper here, and implement his algorithm.
-    # For the time being, do it the O(N) way: start at the roots, and push
-    # inwards. If we don't have to rebuild, keep pushing inwards, as some
-    # successors will still have to.
-
     # Mark dependencies for the roots as needing building. We do this so that
     # we don't build roots that aren't needed for our targets.
     for t in self.targets():
       self.check_dependencies(t)
 
+    # TODO: read Mike Shia's paper here, and implement his algorithm.
+    # For the time being, do it the O(N) way: start at the roots, and push
+    # inwards. If we don't have to rebuild, keep pushing inwards, as some
+    # successors will still have to.
 
     # At this point, the depgraph nodes have needs_building set. Now we do a
     # breadth-first search, starting with the roots.
@@ -152,7 +151,8 @@ class State(object):
             try:
               remote_dict = handle.get() # raises exception
             except:
-              print "Remote exception"
+              print "Remote exception - this is always an error in gin, please report it."
+              print "\t(Of course, it may be triggered by a bug in your ginfile or extension, so you may be able to work around this)"
               raise
 
             del self.handles[data]
@@ -161,8 +161,39 @@ class State(object):
             for k,v in remote_dict.items():
               setattr(data, k, v)
 
-            # Report errors
+            # We may have new dependencies, fix up the graph.
+            self.update_dependencies(data)
+
             if not data.success:
+
+              # Many targets won't build correctly on the first go because their dependencies are not built.
+              # So now we need to build the dependencies.
+              # TODO: compare the old data.deps with the new one
+              if data.old_deps != data.deps:
+
+                new_deps = data.deps - data.old_deps
+
+                # Mark it as needing building
+                for d in new_deps:
+                  self.check_dependencies(d)
+
+                # TODO: Up until this point, we created the depgraph during
+                # ginfile parsing. Now we need to update the graph dynamically,
+                # and we dont' want to restart this function. We need to do
+                # this in a clean elegant non-hacky way, or else we'll be
+                # dealing with subtle bugs forever
+
+                deps = new_dependencies
+                remove_old_deps
+                add_new_deps
+                roots = get_roots (data)
+                for r in roots:
+                  self.start_build(r)
+
+                # when the new predecessors are built, this node will automatically be built again
+
+
+              # Report errors
               print "Failed building: " + data.input_file
               print data.message
               raise Exception("Stop")

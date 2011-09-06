@@ -26,6 +26,9 @@ class Compile(CompilerNode):
     return filename + '.o'
 
   def run(self, dependencies):
+    # TODO: integrate Tup
+    self.deps = gcc.dependencies(input=self.input_file, defs=self.defs, includes=self.includes)
+
     command = gcc.compile(input=self.input_file, target=self.output_file, defs=self.defs, includes=self.includes)
     return self.run_command(command)
 
